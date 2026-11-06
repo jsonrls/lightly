@@ -42,11 +42,14 @@ public final class DeletionGateway: @unchecked Sendable {
   public func validate(_ url: URL) throws {
     if Self.isSymlink(url) { throw Refusal.symlink }
 
-    let allowed = allowedRoots.filter { !Self.isSymlink($0) }.compactMap(Self.realPath)
     // A path that does not resolve cannot be proven safe, so it counts as outside.
-    guard let path = Self.realPath(url), allowed.contains(where: { Self.isInside(path, $0) }) else {
-      throw Refusal.outsideAllowedRoots
-    }
+    guard let path = Self.realPath(url) else { throw Refusal.outsideAllowedRoots }
+
+    // Before the roots: a location redirected to another volume is a silent skip, not an error.
+    if hooks.volumeOf(URL(filePath: path)) != bootVolume { throw Refusal.notOnBootVolume }
+
+    let allowed = allowedRoots.filter { !Self.isSymlink($0) }.compactMap(Self.realPath)
+    guard allowed.contains(where: { Self.isInside(path, $0) }) else { throw Refusal.outsideAllowedRoots }
 
     // A denied root that does not resolve holds nothing on disk, so it cannot contain `path` or be lost with it.
     let denied = deniedRoots.compactMap(Self.realPath)
@@ -54,8 +57,6 @@ public final class DeletionGateway: @unchecked Sendable {
     if denied.contains(where: { path == $0 || Self.isInside(path, $0) || Self.isInside($0, path) }) {
       throw Refusal.denied
     }
-
-    if hooks.volumeOf(URL(filePath: path)) != bootVolume { throw Refusal.notOnBootVolume }
   }
 
   @discardableResult public func delete(_ url: URL) throws -> Int64 { try perform(hooks.remove, on: url) }
@@ -90,8 +91,9 @@ public final class DeletionGateway: @unchecked Sendable {
   }
 
   /// Strictly inside. Both paths must come from `realPath`.
+  // Bytes, not hasPrefix: that compares graphemes, and a combining mark after the slash merges with it.
   private static func isInside(_ path: String, _ root: String) -> Bool {
-    path != root && path.hasPrefix(root == "/" ? root : root + "/")
+    path != root && path.utf8.starts(with: (root == "/" ? root : root + "/").utf8)
   }
 
   private static func size(of url: URL) -> Int64 {

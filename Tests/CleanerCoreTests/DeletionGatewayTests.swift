@@ -72,6 +72,34 @@ struct DeletionGatewayTests {
     try g.delete(s.url("Lib/AS/Other"))
     #expect(!s.exists("Lib/AS/Other"))
   }
+  // String.hasPrefix compares graphemes: a combining mark after the slash merges with it.
+  @Test(arguments: ["Lib/Mail/\u{301}x", "Lib/Mail/\u{200D}y", "Lib/Mail/\u{301}dir/child"])
+  func refusesDeniedCombiningMarkName(path: String) {
+    let g = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"])
+    let f = s.file(path)
+    #expect(throws: Refusal.denied) { try g.delete(f) }
+    #expect(s.exists(path))
+  }
+  @Test func refusesAncestorOfDeniedCombiningMarkName() {
+    let g = s.gateway(roots: ["Lib"], denied: ["Lib/AS/\u{301}G"])
+    s.file("Lib/AS/\u{301}G/x")
+    #expect(throws: Refusal.denied) { try g.delete(s.url("Lib/AS")) }
+    #expect(s.exists("Lib/AS/\u{301}G/x"))
+  }
+  @Test func deletesCombiningMarkNameInsideRoot() throws {
+    let f = s.file("Caches/\u{301}x")
+    try g.delete(f)
+    #expect(!s.exists("Caches/\u{301}x"))
+  }
+  // Byte comparison must not lose this: APFS treats NFC and NFD names as the same folder.
+  @Test(arguments: [("Lib/Caf\u{E9}", "Lib/Cafe\u{301}"), ("Lib/Cafe\u{301}", "Lib/Caf\u{E9}")])
+  func refusesDeniedInAnotherNormalization(onDisk: String, deniedName: String) {
+    let g = s.gateway(roots: ["Lib"], denied: [deniedName])
+    s.file(onDisk + "/x")
+    #expect(throws: Refusal.denied) { try g.delete(s.url(onDisk + "/x")) }
+    #expect(throws: Refusal.denied) { try g.delete(s.url(deniedName + "/x")) }
+    #expect(s.exists(onDisk + "/x"))
+  }
   @Test func allowsSiblingOfDenied() throws {
     let g = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"])
     s.dir("Lib/Mail")
@@ -177,16 +205,41 @@ struct DeletionGatewayTests {
   @Test func liveVolumeOfUnreadablePathIsNil() {
     #expect(DeletionGateway.Hooks.live.volumeOf(s.url("missing")) == nil)
   }
-  @Test func checksRunInBriefOrder() {
+  @Test func redirectedCacheIsSilentSkip() {
+    let elsewhere = s.url("Elsewhere").path(percentEncoded: false)
+    var h = s.hooks
+    h.volumeOf = { url in
+      URL(filePath: url.path(percentEncoded: false).hasPrefix(elsewhere) ? "/Volumes/json SSD" : "/")
+    }
+    let g = s.gateway(roots: ["Caches"], hooks: h)
+    s.file("Elsewhere/x")
+    s.link("Caches/d", to: s.url("Elsewhere"))
+    var r = CleanResult(category: .devCaches, bytesFreed: 0, errors: [])
+    r.record(s.url("Caches/d/x"), g.delete)
+    #expect(r.errors.isEmpty)
+    #expect(s.exists("Elsewhere/x"))
+    #expect(g.touched.isEmpty)
+  }
+  @Test func checksSymlinkThenVolumeThenRootsThenDenied() {
     var h = s.hooks
     h.volumeOf = { _ in nil }
-    let g = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"], hooks: h)
+    let offVolume = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"], hooks: h)
+    let onVolume = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"])
     let link = s.link("Documents/l", to: s.file("Documents/real"))
     let outside = s.url("Documents/real")
     let denied = s.file("Lib/Mail/x")
-    #expect(throws: Refusal.symlink) { try g.validate(link) }
-    #expect(throws: Refusal.outsideAllowedRoots) { try g.validate(outside) }
-    #expect(throws: Refusal.denied) { try g.validate(denied) }
+    #expect(throws: Refusal.symlink) { try offVolume.validate(link) }
+    #expect(throws: Refusal.notOnBootVolume) { try offVolume.validate(outside) }
+    #expect(throws: Refusal.notOnBootVolume) { try offVolume.validate(denied) }
+    #expect(throws: Refusal.outsideAllowedRoots) { try onVolume.validate(outside) }
+    #expect(throws: Refusal.denied) { try onVolume.validate(denied) }
+  }
+  @Test func missingPathFailsClosedBeforeVolume() {
+    var h = s.hooks
+    h.volumeOf = { _ in nil }
+    let g = s.gateway(roots: ["Caches"], hooks: h)
+    s.dir("Caches")
+    #expect(throws: Refusal.outsideAllowedRoots) { try g.validate(s.url("Caches/gone")) }
   }
 
   // Modes, size, touched
