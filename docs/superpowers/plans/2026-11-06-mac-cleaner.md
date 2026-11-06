@@ -15,7 +15,7 @@
 - Deletion happens only through `DeletionGateway`. No other code calls `FileManager.removeItem` or `trashItem`.
 - The app touches only the internal volume that holds the home folder. Never an external volume, including `/Volumes/json SSD`.
 - No test reads or writes a real user folder. Tests use a temporary directory only.
-- Debug builds are dry-run only. Release builds are live unless `MACCLEANER_DRY_RUN=1`.
+- Debug builds are dry-run only. A release build is live only when its `Info.plist` holds `MacCleanerLive` = true, which only `scripts/bundle.sh --live` writes, and no dry-run override is set.
 - No admin rights, no sandbox, hardened runtime on, no third-party dependencies.
 - Deployment target macOS 27.0. Do not lower it without asking the owner.
 - Age limits, exact: logs 7 days, Trash 30 days, leftovers 30 days, unmatched cache idle 7 days, DerivedData idle 7 days, developer caches every 7 days, daily run at 03:00 local.
@@ -531,7 +531,7 @@ struct StatTile: View { init(title: String, value: String, fraction: Double?) }
 ```
 
 Behaviour:
-- Mode: `#if DEBUG` always `.dryRun`; otherwise `.dryRun` when `MACCLEANER_DRY_RUN=1` or when launched with the argument `--dry-run-report`, else `.live`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
+- Mode: `#if DEBUG` always `.dryRun`; otherwise `.live` only when `Info.plist` has `MacCleanerLive` = true, `MACCLEANER_DRY_RUN` is unset or empty, and the argument `--dry-run-report` is absent; else `.dryRun`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
 - `--dry-run-report`: skip the UI, run `CleanSession.run` once with `manual: true` in `.dryRun`, write `dry-run.txt`, print its path and the total bytes, exit 0. Valid in every build.
 - A dry-run process is inert: it never calls `Store.save`, never runs on the schedule (only "Clean now" or `--dry-run-report`), and never registers a login item. It may read the store. This keeps a test launch from stamping `lastScheduledRun` (which would make the first live launch clean at once) and from leaving a login item that later starts the build in live mode.
 - `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); on each schedule check, if `lastScheduledRun` is after now (clock moved back), set it to now and save, so scheduled runs do not stall; sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle in `.live` mode.
@@ -540,7 +540,7 @@ Behaviour:
 - Window content, top to bottom, following mockup option B: 2 × 2 tiles titled DISK, MEMORY, CPU, BATTERY (battery tile hidden when `batteryFraction` is nil); a "Last clean" row with time and amount, with a warning symbol when `lastRecord.hasErrors`, expanding on click to one row per category with `displayName` and `Format.bytes`; "Clean now" button, disabled while cleaning; "Open full view" button; gear menu with "Pause auto-clean" or "Resume auto-clean", and "Quit".
 - When `trashAccess` is false, show: "Trash is skipped. Grant Full Disk Access to include it." with an "Open Settings" button opening `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`.
 - `Info.plist`: `CFBundleIdentifier` `com.maccleaner.app`, `CFBundleName` `Mac Cleaner`, `CFBundleExecutable` `MacCleaner`, `LSUIElement` true, `LSMinimumSystemVersion` `27.0`.
-- `scripts/bundle.sh`: `swift build -c release`; assemble `dist/Mac Cleaner.app/Contents/{MacOS/MacCleaner,Info.plist}`; sign with `codesign --force --options runtime --sign "$IDENTITY"`, where `IDENTITY` is `$CODESIGN_IDENTITY`, else the first "Apple Development" identity from `security find-identity -v -p codesigning`, else `-`.
+- `scripts/bundle.sh [--live]`: only `--live` adds `MacCleanerLive` = true to the bundled `Info.plist`; `swift build -c release`; assemble `dist/Mac Cleaner.app/Contents/{MacOS/MacCleaner,Info.plist}`; sign with `codesign --force --options runtime --sign "$IDENTITY"`, where `IDENTITY` is `$CODESIGN_IDENTITY`, else the first "Apple Development" identity from `security find-identity -v -p codesigning`, else `-`.
 
 - [ ] **Step 1:** Implement the files above.
 - [ ] **Step 2:** Run `swift build` and `swift test`. Expected: build succeeds, all tests pass.
@@ -576,6 +576,6 @@ Behaviour, following `full-window.html`:
 Every step here needs the owner. Do not do any of them on your own.
 
 - [ ] **Step 1:** Give the owner `~/Library/Application Support/com.maccleaner.app/dry-run.txt` from a fresh dry run, with the total size and the ten largest entries. Wait for an explicit yes. The first live clean is irreversible.
-- [ ] **Step 2:** After the yes: `scripts/bundle.sh`, copy `dist/Mac Cleaner.app` to `/Applications`, launch it. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
+- [ ] **Step 2:** After the yes: `scripts/bundle.sh --live`, copy `dist/Mac Cleaner.app` to `/Applications`, launch it. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
 - [ ] **Step 3:** Check after the run: the breakdown matches the dry-run list; `/Volumes/json SSD` is untouched; Documents, Desktop and Downloads are untouched.
 - [ ] **Step 4:** With the owner's OK: create a private GitHub repository, push `main`, `staging` and the feature branch, confirm CI is green, open a pull request from `feature/mac-cleaner-v1` into `staging`. The Vercel stages of the owner's pipeline do not apply to this app.
