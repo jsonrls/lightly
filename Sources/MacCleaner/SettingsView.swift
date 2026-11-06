@@ -28,7 +28,7 @@ struct SettingsView: View {
 
   private var general: some View {
     card {
-      row("Open at login", detail: loginDetail, isOn: Binding(get: { model.state.settings.openAtLogin }, set: model.setOpenAtLogin))
+      row("Open at login", detail: loginDetail, isOn: Binding(get: { model.state.settings.openAtLogin }, set: { model.setOpenAtLogin($0) }))
       if model.loginStatus == .requiresApproval {
         Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
           .buttonStyle(.glass)
