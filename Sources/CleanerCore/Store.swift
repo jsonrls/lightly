@@ -33,19 +33,29 @@ public struct Store: Sendable {
   /// Missing file is a fresh install. A file that exists but cannot be read or decoded is moved to
   /// state.corrupt.json and the app starts paused, so a lost pause never turns into a surprise clean.
   public func load() -> AppState {
-    let data: Data
-    do { data = try Data(contentsOf: file) } catch let e as CocoaError where e.code == .fileReadNoSuchFile {
-      return AppState()
-    } catch { return setAside() }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return (try? decoder.decode(AppState.self, from: data)) ?? setAside()
-  }
-
-  private func setAside() -> AppState {
+    if let state = read() { return state }
     let aside = directory.appending(path: "state.corrupt.json")
     // rename(2), not FileManager: it replaces an older aside atomically, and deletion is reserved for DeletionGateway.
     _ = rename(file.path(percentEncoded: false), aside.path(percentEncoded: false))  // on failure we still start paused
+    return Self.pausedState
+  }
+
+  /// Same result as `load()` but changes nothing on disk, so a dry run cannot move a corrupt file
+  /// away and leave the next live launch unpaused.
+  public func peek() -> AppState { read() ?? Self.pausedState }
+
+  /// Nil when the file exists but cannot be read or decoded.
+  private func read() -> AppState? {
+    let data: Data
+    do { data = try Data(contentsOf: file) } catch let e as CocoaError where e.code == .fileReadNoSuchFile {
+      return AppState()
+    } catch { return nil }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try? decoder.decode(AppState.self, from: data)
+  }
+
+  private static var pausedState: AppState {
     var s = AppState()
     s.paused = true
     return s

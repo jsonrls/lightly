@@ -33,6 +33,25 @@ struct StoreTests {
     #expect(!box.exists("state-dir/state.json"))
   }
 
+  @Test func peekPausesOnCorruptFileAndLeavesItInPlace() throws {
+    box.dir("state-dir")
+    try Data("{{{".utf8).write(to: box.url("state-dir/state.json"))
+    let s = store.peek()
+    #expect(s.paused)
+    #expect(s.history.isEmpty && s.inventory == AppInventory())
+    #expect(try String(contentsOf: box.url("state-dir/state.json"), encoding: .utf8) == "{{{")
+    #expect(!box.exists("state-dir/state.corrupt.json"))
+  }
+
+  @Test func peekMatchesLoadOnGoodAndMissingFiles() throws {
+    #expect(store.peek() == AppState())
+    var s = AppState()
+    s.lastScheduledRun = Date(timeIntervalSince1970: 1_700_000_100)
+    try store.save(s)
+    #expect(store.peek() == s)
+    #expect(store.peek() == store.load())
+  }
+
   @Test func secondCorruptionReplacesAside() throws {
     box.dir("state-dir")
     try Data("first".utf8).write(to: box.url("state-dir/state.json"))

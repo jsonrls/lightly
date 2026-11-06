@@ -4,14 +4,15 @@ import Observation
 import ServiceManagement
 
 enum Launch {
-  static let isDryRunReport = CommandLine.arguments.contains("--dry-run-report")
+  static let isDryRunReport = CommandLine.arguments.contains(RunPolicy.dryRunReportFlag)
 
   /// The one switch between a harmless launch and real deletion. Read it before anything else runs.
   static let mode: DeletionGateway.Mode = {
     #if DEBUG
     return .dryRun
     #else
-    return isDryRunReport || ProcessInfo.processInfo.environment["MACCLEANER_DRY_RUN"] == "1" ? .dryRun : .live
+    return RunPolicy.mode(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment,
+                          bundleLive: Bundle.main.object(forInfoDictionaryKey: "MacCleanerLive") as? Bool == true)
     #endif
   }()
 }
@@ -27,7 +28,7 @@ private func writeDryRunList(_ touched: [URL], to directory: URL) throws -> URL 
 /// Hardcodes `.dryRun` instead of reading `Launch.mode`, so this path can never delete.
 func runDryRunReport() -> Never {
   let directory = Store.defaultDirectory()
-  var state = Store(directory: directory).load()
+  var state = Store(directory: directory).peek()
   let (record, touched) = CleanSession.run(env: CleanEnvironment.live(mode: .dryRun), state: &state, now: Date(), manual: true)
   do {
     let file = try writeDryRunList(touched, to: directory)
@@ -46,6 +47,7 @@ func runDryRunReport() -> Never {
   var state = AppState()
   var isCleaning = false
   var trashAccess: Bool
+  private(set) var unsaved = false  // the last save failed; retried on each schedule check
   private(set) var dryRunRecord: RunRecord?
   var lastRecord: RunRecord? { dryRunRecord ?? state.history.last }
 
@@ -63,11 +65,9 @@ func runDryRunReport() -> Never {
   }
 
   func start() {
-    state = Store(directory: storeDirectory).load()
-    if state.lastScheduledRun == nil {  // so nothing is cleaned at first launch
-      state.lastScheduledRun = Date()
-      save()
-    }
+    let store = Store(directory: storeDirectory)
+    state = mode == .live ? store.load() : store.peek()
+    if RunPolicy.stampFirstLaunch(&state, now: Date()) { save() }
     Task {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(10))
@@ -94,7 +94,7 @@ func runDryRunReport() -> Never {
   func cleanNow() { clean(manual: true) }
 
   func togglePause() {
-    state.paused.toggle()
+    RunPolicy.togglePause(&state, now: Date())
     save()
   }
 
@@ -107,7 +107,13 @@ func runDryRunReport() -> Never {
   /// or its `lastScheduledRun` stamp would make the first live launch clean at once.
   private func save() {
     guard mode == .live else { return }
-    do { try Store(directory: storeDirectory).save(state) } catch { NSLog("State not saved: \(error)") }
+    do {
+      try Store(directory: storeDirectory).save(state)
+      unsaved = false
+    } catch {
+      unsaved = true
+      NSLog("State not saved: \(error)")
+    }
   }
 
   private func sampleStats() {
@@ -125,14 +131,10 @@ func runDryRunReport() -> Never {
   private func checkSchedule() {
     trashAccess = TrashRule.hasAccess(trashDir: trashDir)
     guard mode == .live, !isCleaning else { return }
-    let now = Date()
-    if let last = state.lastScheduledRun, last > now {  // clock moved back
-      state.lastScheduledRun = now
-      save()
-    }
-    if Scheduler.shouldRun(now: now, lastRun: state.lastScheduledRun, paused: state.paused, calendar: .current) {
-      clean(manual: false)
-    }
+    if unsaved { save() }
+    let check = RunPolicy.scheduleCheck(&state, unsaved: unsaved, now: Date(), calendar: .current)
+    if check.restamped { save() }
+    if check.shouldRun { clean(manual: false) }
   }
 
   private func clean(manual: Bool) {
@@ -147,12 +149,7 @@ func runDryRunReport() -> Never {
       }.value
       isCleaning = false
       if mode == .live {
-        // Both can change during the run, and a lost pause would turn into a clean the owner stopped.
-        var merged = next
-        merged.paused = state.paused
-        merged.diskSamples = state.diskSamples
-        merged.prune(now: now)
-        state = merged
+        state = RunPolicy.merge(run: next, current: state, now: now)
         save()
       } else {
         dryRunRecord = record

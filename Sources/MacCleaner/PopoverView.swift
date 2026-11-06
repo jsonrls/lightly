@@ -7,6 +7,8 @@ struct PopoverView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
+      if model.mode == .dryRun { statusLine("Dry run: nothing is deleted") }
+      if model.state.paused { statusLine("Auto-clean paused") }
       tiles
       lastClean
       if !model.trashAccess { trashNotice }
@@ -22,6 +24,10 @@ struct PopoverView: View {
     }
     .padding(14)
     .frame(width: 280)
+  }
+
+  private func statusLine(_ text: String) -> some View {
+    Text(text).font(.caption.weight(.semibold)).foregroundStyle(.orange)
   }
 
   private var tiles: some View {
@@ -43,10 +49,10 @@ struct PopoverView: View {
         HStack {
           Text("Last clean")
           Spacer()
-          if model.lastRecord?.hasErrors == true {
+          if model.unsaved || model.lastRecord?.hasErrors == true {
             Image(systemName: "exclamationmark.triangle.fill")
               .foregroundStyle(.yellow)
-              .accessibilityLabel("Finished with errors")
+              .accessibilityLabel(model.unsaved ? "Could not save settings" : "Finished with errors")
           }
           Text(model.lastRecord.map(summary) ?? "Never").foregroundStyle(.secondary)
         }
