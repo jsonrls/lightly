@@ -575,7 +575,7 @@ Behaviour, following `full-window.html`:
 
 Every step here needs the owner. Do not do any of them on your own.
 
-- [ ] **Step 1:** Give the owner `~/Library/Application Support/com.maccleaner.app/dry-run.txt` from a fresh dry run, with the total size and the ten largest entries. Wait for an explicit yes. The first live clean is irreversible.
-- [ ] **Step 2:** After the yes: `scripts/bundle.sh --live`, copy `dist/Mac Cleaner.app` to `/Applications`, launch it. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
+- [ ] **Step 1:** Give the owner `~/Library/Application Support/com.maccleaner.app/dry-run.txt` from a fresh dry run, with the total size and the ten largest entries. Say plainly that the list is a snapshot: caches of apps open at report time, recently used cache folders, and the Trash (unless the report ran with Full Disk Access) will also be cleaned by the rules. The yes covers the rules, not only today's list. Wait for an explicit yes. The first live clean is irreversible.
+- [ ] **Step 2:** After the yes: `scripts/bundle.sh --live`, copy `dist/Mac Cleaner.app` to `/Applications`, launch only that copy, never `dist/`, because the login item pins to where the app first ran. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
 - [ ] **Step 3:** Check after the run: the breakdown matches the dry-run list; `/Volumes/json SSD` is untouched; Documents, Desktop and Downloads are untouched.
 - [ ] **Step 4:** With the owner's OK: create a private GitHub repository, push `main`, `staging` and the feature branch, confirm CI is green, open a pull request from `feature/mac-cleaner-v1` into `staging`. The Vercel stages of the owner's pipeline do not apply to this app.

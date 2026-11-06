@@ -46,8 +46,8 @@ These make the app a failure even if everything else works:
 | Category | Where | Rule | How |
 |---|---|---|---|
 | App caches | `~/Library/Caches` | Skip the cache of any app that is open | Delete |
-| Logs | `~/Library/Logs` | Only files older than 7 days | Delete |
-| Trash | `~/.Trash` | Only items that entered the Trash 30 or more days ago | Delete |
+| Logs | `~/Library/Logs` | Only files older than 7 days; crash reports in `DiagnosticReports` are kept **(call)** | Delete |
+| Trash | `~/.Trash` | Only items that entered the Trash 30 or more days ago; hidden files such as `.DS_Store` are kept, because Finder's Put Back needs them **(call)** | Delete |
 | App leftovers | See below | App gone for 30 or more days | Move to Trash |
 | Developer caches | See below | Once a week **(call)** | Delete |
 | Docker | Docker CLI | Build cache and dangling images only | Docker prune commands |
@@ -58,7 +58,7 @@ Details, all **(call)**:
 
 - **App caches.** A cache folder named after an open app's bundle ID is skipped. Folders that cannot be matched to an app are cleaned only if nothing inside changed in the last 7 days. `com.apple.*` folders are skipped in version 1. A built-in skip list also protects folders whose contents do not come back by themselves (Playwright, Cypress, Electron and Puppeteer browser downloads) and Apple folders without the `com.apple.` prefix (`CloudKit`, `GeoServices`, `PassKit`, `FamilyCircle`, `SiriEntityCache`, `GameKit`, `Animoji`).
 - **App leftovers.** The app keeps an inventory of apps installed on the internal disk (`/Applications`, `~/Applications`). When an app disappears from the inventory, the date is recorded. After 30 days gone, files named after that app's bundle ID are moved to the Trash from: `Application Support`, `Caches`, `Preferences`, `Saved Application State`, `HTTPStorages`, `WebKit`, `Logs` (all under `~/Library`). The Trash rule then removes them 30 days later, so the owner has 60 days in total to notice. If the app comes back, the clock resets. "Gone" means gone from the whole Mac: the clock also resets if macOS can still find the app anywhere (for example moved to an external drive), if it is running, or if any of its files changed in the last 30 days. A leftover holding browser data (`Login Data`, `Cookies`, `places.sqlite`) is kept. Never `com.apple.*`. `Containers` and `Group Containers` are excluded. Known limit: apps deleted before this app was first launched are never cleaned up, and apps installed on external volumes are ignored.
-- **Developer caches.** Cleared in full once a week rather than daily, so daily work is not slowed by re-downloads and rebuilds. Xcode DerivedData: only project folders unused for 7 days. A tool that is not installed is skipped. On the owner's Mac today: npm (via nvm), Homebrew, pip and Docker are installed; yarn and pnpm are not.
+- **Developer caches.** Cleared in full once a week rather than daily, so daily work is not slowed by re-downloads and rebuilds. Xcode DerivedData: only project folders unused for 7 days. A tool with no cache folder is skipped; a cache folder left behind by an uninstalled tool is cleaned as junk. On the owner's Mac today: npm (via nvm), Homebrew, pip and Docker are installed; yarn and pnpm are not, but their cache folders remain.
 - **Docker.** Build cache and dangling images only. Never volumes, tagged images or containers. Only when Docker is already running; the app never starts Docker. Skipped if Docker's disk image is not on the internal disk.
 - **Clean now** runs every rule, including the weekly ones, with the same age limits.
 - **Pause auto-clean** stops scheduled runs until resumed. "Clean now" still works while paused.
