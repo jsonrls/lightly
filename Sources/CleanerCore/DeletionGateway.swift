@@ -48,9 +48,12 @@ public final class DeletionGateway: @unchecked Sendable {
       throw Refusal.outsideAllowedRoots
     }
 
-    // A denied root that does not resolve cannot contain `path`, which just did.
+    // A denied root that does not resolve holds nothing on disk, so it cannot contain `path` or be lost with it.
     let denied = deniedRoots.compactMap(Self.realPath)
-    if denied.contains(where: { path == $0 || Self.isInside(path, $0) }) { throw Refusal.denied }
+    // An ancestor counts too: deleting it would take the denied root with it.
+    if denied.contains(where: { path == $0 || Self.isInside(path, $0) || Self.isInside($0, path) }) {
+      throw Refusal.denied
+    }
 
     if hooks.volumeOf(URL(filePath: path)) != bootVolume { throw Refusal.notOnBootVolume }
   }

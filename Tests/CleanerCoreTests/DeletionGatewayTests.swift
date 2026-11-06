@@ -63,6 +63,15 @@ struct DeletionGatewayTests {
     #expect(throws: Refusal.denied) { try g.delete(s.url("Lib/Mail")) }
     #expect(s.exists("Lib/Mail"))
   }
+  @Test func refusesAncestorOfDenied() throws {
+    let g = s.gateway(roots: ["Lib"], denied: ["Lib/AS/Google/Chrome"])
+    s.file("Lib/AS/Google/Chrome/Cookies")
+    #expect(throws: Refusal.denied) { try g.delete(s.url("Lib/AS/Google")) }
+    #expect(s.exists("Lib/AS/Google/Chrome/Cookies"))
+    s.file("Lib/AS/Other/x")
+    try g.delete(s.url("Lib/AS/Other"))
+    #expect(!s.exists("Lib/AS/Other"))
+  }
   @Test func allowsSiblingOfDenied() throws {
     let g = s.gateway(roots: ["Lib"], denied: ["Lib/Mail"])
     s.dir("Lib/Mail")
