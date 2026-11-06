@@ -1,17 +1,27 @@
 import Foundation
 
 /// Newest modification date of the folder and everything under it. Links are not followed.
+/// Anything that cannot be read gives `.distantFuture`, so callers treat the folder as in use.
 func newestModification(in url: URL) -> Date {
+  var unreadable = false
   func modified(_ url: URL) -> Date {
     // attributesOfItem uses lstat, so a link reports itself.
-    (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.modificationDate] as? Date
-      ?? .distantPast
+    guard let date = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.modificationDate] as? Date
+    else {
+      unreadable = true
+      return .distantPast
+    }
+    return date
   }
   var newest = modified(url)
-  if let items = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
-    for case let item as URL in items { newest = max(newest, modified(item)) }
-  }
-  return newest
+  // The enumerator reports a plain file as an error, so only folders go through it.
+  let isFolder = (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.type] as? FileAttributeType == .typeDirectory
+  let items = isFolder ? FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) { _, _ in
+    unreadable = true
+    return true
+  } : nil
+  while let item = items?.nextObject() as? URL { newest = max(newest, modified(item)) }
+  return unreadable ? .distantFuture : newest
 }
 
 public struct CacheRule: CleanRule {

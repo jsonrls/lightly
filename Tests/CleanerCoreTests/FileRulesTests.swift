@@ -24,6 +24,19 @@ struct FileRulesTests {
     #expect(box.exists("Caches/com.foo.app") && box.exists("Caches/com.foo.app.helper"))
   }
 
+  @Test func unreadableCacheFolderIsKept() {
+    box.file("Caches/com.x.unmatched/db/live.sqlite")
+    box.dir("Caches/com.x.unmatched/db", ageDays: 40)
+    box.dir("Caches/com.x.unmatched", ageDays: 40)
+    let locked = box.url("Caches/com.x.unmatched/db").path(percentEncoded: false)
+    try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked) }
+    // Dry run: a real remove would fail on the locked folder and hide the bug.
+    let dry = box.gateway(roots: ["Caches"], mode: .dryRun)
+    _ = cache().run(gateway: dry, now: now)
+    #expect(dry.touched.isEmpty)
+  }
+
   @Test func deletesInstalledIdleApp() {
     box.file("Caches/com.bar.app/a")
     let r = cache().run(gateway: gw(), now: now)

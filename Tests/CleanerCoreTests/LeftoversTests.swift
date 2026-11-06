@@ -72,6 +72,68 @@ struct LeftoversTests {
     #expect(InstalledApps.scan([sb.url("Apps"), sb.url("Missing")]) == ["com.foo", "com.bar"])
   }
 
+  func app(_ sb: Sandbox, _ path: String, id: String) throws {
+    sb.dir(path + "/Contents")
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": id], format: .xml, options: 0)
+    try plist.write(to: sb.url(path + "/Contents/Info.plist"))
+  }
+
+  @Test func scanIgnoresDepthThreeAndLinkedApps() throws {
+    let sb = Sandbox()
+    try app(sb, "Apps/Foo.app", id: "com.foo")
+    try app(sb, "Apps/A/B/Deep.app", id: "com.deep")
+    try app(sb, "Elsewhere/Real.app", id: "com.real")
+    sb.link("Apps/Link.app", to: sb.url("Elsewhere/Real.app"))
+    #expect(InstalledApps.scan([sb.url("Apps")]) == ["com.foo"])
+  }
+
+  @Test func unreadableFolderScansEmpty() throws {
+    for locked in ["Sys", "User/Utilities"] {
+      let sb = Sandbox()
+      try app(sb, "Sys/Foo.app", id: "com.foo")
+      try app(sb, "User/Bar.app", id: "com.bar")
+      try app(sb, "User/Utilities/Baz.app", id: "com.baz")
+      let path = sb.url(locked).path(percentEncoded: false)
+      var inventory = inv(["com.foo", "com.bar", "com.baz"])
+      let before = inventory
+      try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+      defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path) }
+      let found = InstalledApps.scan([sb.url("Sys"), sb.url("User")])
+      #expect(found.isEmpty, "\(locked)")
+      inventory.update(present: found, now: t.addingTimeInterval(Limits.day))
+      #expect(inventory == before)
+    }
+  }
+
+  @Test func cleanedAppDoesNotRearm() {
+    var i = inv(["a.b", "x.y"])
+    i.update(present: ["x.y"], now: t)
+    i.markCleaned(["a.b"])
+    i.update(present: ["x.y"], now: t.addingTimeInterval(Limits.day))
+    #expect(i.removed.isEmpty)
+  }
+
+  @Test func partialCandidatesTrashWithoutErrors() {
+    let sb = Sandbox()
+    for p in ["Caches/com.gone.app/x", "Logs/com.gone.app/x"] { sb.file("Library/" + p, ageDays: 40); sb.dir("Library/" + p.split(separator: "/x")[0], ageDays: 40) }
+    let r = LeftoversRule(sb).run(gateway: sb.gateway(roots: ["Library"]), now: Date())
+    #expect(r.errors.isEmpty && r.bytesFreed > 0)
+    #expect(!sb.exists("Library/Caches/com.gone.app") && !sb.exists("Library/Logs/com.gone.app"))
+  }
+
+  @Test func unreadableDataCountsAsRecent() {
+    let sb = Sandbox()
+    sb.file("Library/Application Support/com.gone.app/db/live.sqlite")
+    sb.dir("Library/Application Support/com.gone.app/db", ageDays: 40)
+    sb.dir("Library/Application Support/com.gone.app", ageDays: 40)
+    let locked = sb.url("Library/Application Support/com.gone.app/db").path(percentEncoded: false)
+    try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked) }
+    #expect(LeftoverRule.recentlyUsed(libraryDir: sb.url("Library"), bundleID: "com.gone.app", now: Date()))
+    let r = LeftoversRule(sb).run(gateway: sb.gateway(roots: ["Library"]), now: Date())
+    #expect(r.bytesFreed == 0 && sb.exists("Library/Application Support/com.gone.app"))
+  }
+
   static let seven = [
     "Application Support/com.gone.app", "Caches/com.gone.app", "Preferences/com.gone.app.plist",
     "Saved Application State/com.gone.app.savedState", "HTTPStorages/com.gone.app", "WebKit/com.gone.app",
@@ -99,14 +161,16 @@ struct LeftoversTests {
   @Test func recentlyUsedDataIsKept() {
     let sb = Sandbox()
     sb.file("Library/Caches/com.gone.app/x", ageDays: 5)
+    sb.file("Library/Logs/com.gone.app/x", ageDays: 40)
+    sb.dir("Library/Logs/com.gone.app", ageDays: 40)
     let r = LeftoversRule(sb).run(gateway: sb.gateway(roots: ["Library"]), now: Date())
     #expect(r.bytesFreed == 0)
-    #expect(sb.exists("Library/Caches/com.gone.app"))
+    #expect(sb.exists("Library/Caches/com.gone.app") && sb.exists("Library/Logs/com.gone.app"))
   }
 
   @Test func hostileIDsYieldNothing() {
     let lib = URL(filePath: "/nonexistent/Library")
-    for id in ["../../Documents", "a/b", "", "a b", "x..y"] {
+    for id in ["../../Documents", "a/b", "", "a b", "x..y", ".", "Google", "a.", ".a"] {
       #expect(LeftoverRule.candidates(libraryDir: lib, bundleID: id).isEmpty, "\(id)")
     }
     #expect(LeftoverRule.candidates(libraryDir: lib, bundleID: "com.ok-1.app").count == 7)

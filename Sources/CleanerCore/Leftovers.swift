@@ -19,20 +19,30 @@ public struct AppInventory: Codable, Sendable, Equatable {
   }
 
   public mutating func resetClock(_ id: String, now: Date) { removed[id] = now }
-  public mutating func markCleaned(_ ids: [String]) { for id in ids { removed[id] = nil } }
+  /// Also forgets the install, or the next `update` would date the app as missing again.
+  public mutating func markCleaned(_ ids: [String]) {
+    for id in ids {
+      removed[id] = nil
+      installed.remove(id)
+    }
+  }
 }
 
 public enum InstalledApps {
-  /// Bundle IDs of `*.app` at depth 1 and 2. Symlinks are skipped; unreadable folders yield what was found.
+  /// Bundle IDs of `*.app` at depth 1 and 2. Linked apps are not counted (a link reports isDirectory false).
+  /// An absent folder is skipped. A folder that exists but cannot be listed makes the whole scan empty,
+  /// because a partial list would mark every app in it as gone.
   public static func scan(_ dirs: [URL]) -> Set<String> {
     let fm = FileManager.default
     var ids: Set<String> = []
+    var failed = false
     func visit(_ dir: URL, depth: Int) {
-      guard let items = try? fm.contentsOfDirectory(
-        at: dir, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey]) else { return }
+      guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey]) else {
+        if fm.fileExists(atPath: dir.path(percentEncoded: false)) { failed = true }
+        return
+      }
       for item in items {
-        let v = try? item.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
-        guard v?.isSymbolicLink != true, v?.isDirectory == true else { continue }
+        guard (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
         if item.pathExtension == "app" {
           let plist = item.appending(path: "Contents/Info.plist")
           if let data = try? Data(contentsOf: plist),
@@ -44,7 +54,7 @@ public enum InstalledApps {
       }
     }
     for d in dirs { visit(d, depth: 1) }
-    return ids
+    return failed ? [] : ids
   }
 }
 
@@ -60,7 +70,7 @@ public struct LeftoverRule: CleanRule {
   }
 
   public static func candidates(libraryDir: URL, bundleID id: String) -> [URL] {
-    guard id.wholeMatch(of: /[A-Za-z0-9.-]+/) != nil, !id.contains("..") else { return [] }
+    guard id.wholeMatch(of: /[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/) != nil else { return [] }
     return [
       "Application Support/\(id)", "Caches/\(id)", "Preferences/\(id).plist",
       "Saved Application State/\(id).savedState", "HTTPStorages/\(id)", "WebKit/\(id)", "Logs/\(id)",
@@ -69,15 +79,20 @@ public struct LeftoverRule: CleanRule {
 
   public static func recentlyUsed(libraryDir: URL, bundleID: String, now: Date) -> Bool {
     candidates(libraryDir: libraryDir, bundleID: bundleID).contains {
-      now.timeIntervalSince(newestModification(in: $0)) < Limits.leftoverGrace
+      exists($0) && now.timeIntervalSince(newestModification(in: $0)) < Limits.leftoverGrace
     }
+  }
+
+  /// lstat, so a dangling link counts as present.
+  private static func exists(_ url: URL) -> Bool {
+    (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))) != nil
   }
 
   public func run(gateway: DeletionGateway, now: Date) -> CleanResult {
     var result = CleanResult(category: category, bytesFreed: 0, errors: [])
     for id in bundleIDs where !Self.recentlyUsed(libraryDir: libraryDir, bundleID: id, now: now) {
       for url in Self.candidates(libraryDir: libraryDir, bundleID: id)
-      where (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))) != nil {
+      where Self.exists(url) {
         result.record(url) { try gateway.trash($0) }
       }
     }
