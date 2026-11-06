@@ -1,0 +1,53 @@
+import Foundation
+import Testing
+@testable import CleanerCore
+
+struct StoreTests {
+  let box = Sandbox()
+  var store: Store { Store(directory: box.url("state-dir")) }
+
+  @Test func roundTrip() throws {
+    var s = AppState()
+    s.history = [RunRecord(date: Date(timeIntervalSince1970: 1_700_000_000), manual: true,
+                           results: [CleanResult(category: .logs, bytesFreed: 5, errors: ["x"])])]
+    s.inventory.installed = ["com.a"]
+    s.diskSamples = [DiskSample(day: Date(timeIntervalSince1970: 1_700_000_000), freeBytes: 42)]
+    s.paused = true
+    s.lastScheduledRun = Date(timeIntervalSince1970: 1_700_000_100)
+    s.lastWeeklyRun = Date(timeIntervalSince1970: 1_700_000_200)
+    try store.save(s)
+    #expect(store.load() == s)
+  }
+
+  @Test func missingFileGivesEmptyState() {
+    #expect(store.load() == AppState())
+  }
+
+  @Test func corruptFileGivesEmptyState() throws {
+    box.dir("state-dir")
+    try Data("{{{".utf8).write(to: box.url("state-dir/state.json"))
+    #expect(store.load() == AppState())
+  }
+
+  @Test func saveFailureThrows() {
+    box.file("blocker")  // a file where the directory should be
+    #expect(throws: (any Error).self) { try Store(directory: box.url("blocker")).save(AppState()) }
+  }
+
+  @Test func pruneDropsOldEntries() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func rec(_ days: Double) -> RunRecord { RunRecord(date: now - days * Limits.day, manual: false, results: []) }
+    var s = AppState()
+    s.history = [rec(366), rec(364)]
+    s.diskSamples = [DiskSample(day: now - 31 * Limits.day, freeBytes: 1),
+                     DiskSample(day: now - 29 * Limits.day, freeBytes: 2)]
+    s.prune(now: now)
+    #expect(s.history.map(\.date) == [now - 364 * Limits.day])
+    #expect(s.diskSamples.map(\.freeBytes) == [2])
+  }
+
+  @Test func defaultDirectoryPath() {
+    let path = Store.defaultDirectory().path(percentEncoded: false)
+    #expect(path.hasSuffix("/Library/Application Support/com.maccleaner.app/"))
+  }
+}
