@@ -1,0 +1,44 @@
+import Foundation
+import Testing
+@testable import CleanerCore
+
+struct SchedulerTests {
+  let cal: Calendar = {
+    var c = Calendar(identifier: .gregorian)
+    c.timeZone = TimeZone(identifier: "Asia/Manila")!
+    return c
+  }()
+
+  func at(_ s: String) -> Date {
+    let f = DateFormatter()
+    f.calendar = cal
+    f.timeZone = cal.timeZone
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    return f.date(from: s)!
+  }
+
+  func run(now: String, last: String?, paused: Bool = false) -> Bool {
+    Scheduler.shouldRun(now: at(now), lastRun: last.map(at), paused: paused, calendar: cal)
+  }
+
+  @Test func neverStampedDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: nil)) }
+  @Test func pausedDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: "2026-11-03 12:00", paused: true)) }
+
+  @Test func runsAtThreeNotBefore() {
+    #expect(!run(now: "2026-11-06 02:59", last: "2026-11-05 03:00"))
+    #expect(run(now: "2026-11-06 03:00", last: "2026-11-05 03:00"))
+  }
+
+  @Test func oncePerDay() { #expect(!run(now: "2026-11-06 23:00", last: "2026-11-06 03:00")) }
+  @Test func catchesUpAfterSleep() { #expect(run(now: "2026-11-06 08:00", last: "2026-11-03 03:00")) }
+  @Test func clockMovedBackDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: "2026-11-07 03:00")) }
+  @Test func catchesUpBeforeThreeUsingPreviousDay() { #expect(run(now: "2026-11-06 02:00", last: "2026-11-04 03:00")) }
+
+  @Test func weeklyBoundary() {
+    let now = at("2026-11-13 03:00")
+    #expect(Scheduler.weeklyDue(now: now, lastWeeklyRun: nil))
+    #expect(!Scheduler.weeklyDue(now: now, lastWeeklyRun: now - 6 * Limits.day))
+    #expect(Scheduler.weeklyDue(now: now, lastWeeklyRun: now - 7 * Limits.day))
+  }
+}

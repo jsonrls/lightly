@@ -15,7 +15,7 @@
 - Deletion happens only through `DeletionGateway`. No other code calls `FileManager.removeItem` or `trashItem`.
 - The app touches only the internal volume that holds the home folder. Never an external volume, including `/Volumes/json SSD`.
 - No test reads or writes a real user folder. Tests use a temporary directory only.
-- Debug builds are dry-run only. Release builds are live unless `MACCLEANER_DRY_RUN=1`.
+- Debug builds are dry-run only. A release build is live only when its `Info.plist` holds `MacCleanerLive` = true, which only `scripts/bundle.sh --live` writes, and no dry-run override is set.
 - No admin rights, no sandbox, hardened runtime on, no third-party dependencies.
 - Deployment target macOS 27.0. Do not lower it without asking the owner.
 - Age limits, exact: logs 7 days, Trash 30 days, leftovers 30 days, unmatched cache idle 7 days, DerivedData idle 7 days, developer caches every 7 days, daily run at 03:00 local.
@@ -158,7 +158,7 @@ extension CleanResult {
 }
 ```
 
-`validate` checks in this order: the URL itself is a symlink → `.symlink`; resolve symlinks in the path, then it must be strictly inside an allowed root (never the root itself) → `.outsideAllowedRoots`; inside or equal to a denied root → `.denied`; `hooks.volumeOf(resolved) != bootVolume` → `.notOnBootVolume`. Roots are resolved the same way before comparing. `Hooks.live.volumeOf` returns `volumeURLKey` only when `volumeIsInternalKey` is true. Size is the sum of `totalFileAllocatedSizeKey` without following links. In `.dryRun` nothing is removed; size and `touched` are still reported.
+`validate` checks in this order: the URL itself is a symlink → `.symlink`; resolve symlinks in the path, then it must be strictly inside an allowed root (never the root itself) → `.outsideAllowedRoots`; inside or equal to a denied root → `.denied`; `hooks.volumeOf(resolved) != bootVolume` → `.notOnBootVolume`. On every call, an allowed root whose own URL is a symlink is ignored (so `refusesSymlinkedRoot` gets `.outsideAllowedRoots`, even when the link appeared after the gateway was built); the remaining roots, and all denied roots, are resolved the same way before comparing. `Hooks.live.volumeOf` returns `volumeURLKey` only when `volumeIsInternalKey` is true. Size is the sum of `totalFileAllocatedSizeKey` without following links. In `.dryRun` nothing is removed; size and `touched` are still reported.
 
 Test helper, used by every later task:
 
@@ -171,7 +171,7 @@ struct Sandbox {
   func url(_ path: String) -> URL
   func exists(_ path: String) -> Bool
   func tree() -> [String]   // sorted relative paths under root
-  var hooks: DeletionGateway.Hooks   // volumeOf: constant URL(filePath: "/"); trash: moves into root/__trash
+  var hooks: DeletionGateway.Hooks   // volumeOf: constant URL(filePath: "/"); trash: moves into root/__trash, appending " 2", " 3"… on a name collision
   func gateway(roots: [String], denied: [String] = [], mode: DeletionGateway.Mode = .live,
                hooks: DeletionGateway.Hooks? = nil) -> DeletionGateway   // bootVolume "/"
 }
@@ -265,7 +265,7 @@ public struct AppInventory: Codable, Sendable, Equatable {
   public mutating func update(present: Set<String>, now: Date)   // no-op when present is empty
   public func due(now: Date) -> [String]              // missing ≥ 30 days, never com.apple.*
   public mutating func resetClock(_ id: String, now: Date)
-  public mutating func markCleaned(_ ids: [String])   // drop from removed
+  public mutating func markCleaned(_ ids: [String])   // drop from removed and installed
 }
 public enum InstalledApps { public static func scan(_ dirs: [URL]) -> Set<String> }   // *.app at depth 1 and 2, CFBundleIdentifier from Contents/Info.plist
 public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gateway.trash
@@ -275,7 +275,7 @@ public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gate
 }
 ```
 
-`update`: an ID in `installed` but not in `present` gets `removed[id] = now` unless already set; an ID in `present` is added to `installed` and dropped from `removed`. `candidates` returns, under `libraryDir`: `Application Support/<id>`, `Caches/<id>`, `Preferences/<id>.plist`, `Saved Application State/<id>.savedState`, `HTTPStorages/<id>`, `WebKit/<id>`, `Logs/<id>`; it returns `[]` for an ID that does not match `^[A-Za-z0-9.-]+$` or contains `..`.
+`update`: an ID in `installed` but not in `present` gets `removed[id] = now` unless already set; an ID in `present` is added to `installed` and dropped from `removed`. `candidates` returns, under `libraryDir`: `Application Support/<id>`, `Caches/<id>`, `Preferences/<id>.plist`, `Saved Application State/<id>.savedState`, `HTTPStorages/<id>`, `WebKit/<id>`, `Logs/<id>`; it returns `[]` for an ID that is not reverse-DNS form, `[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+` as a whole match. `InstalledApps.scan` returns `[]` when any existing folder it should list cannot be listed, so a partial scan never reads as "apps removed"; an absent folder is tolerated. `newestModification` returns `.distantFuture` when anything under the path cannot be read, so "cannot prove idle" means keep.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -287,7 +287,7 @@ public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gate
 @Test func dueAtThirtyDays()                // removed 29 days ago → not due; 30 days → due
 @Test func appleNeverDue()                  // removed["com.apple.Foo"] 90 days ago → due(now) is empty
 @Test func scanReadsBundleIDs()             // Apps/Foo.app and Apps/Utilities/Bar.app fixtures → both IDs; a folder without Info.plist ignored
-@Test func trashesOnlyTheSevenCandidates()  // all seven paths for "com.gone.app" land in __trash; Application Support/com.other.app and Containers/com.gone.app still exist
+@Test func trashesOnlyTheSevenCandidates()  // all seven paths for "com.gone.app" are gone from Library and __trash holds seven entries; Application Support/com.other.app and Containers/com.gone.app still exist
 @Test func hostileIDsYieldNothing()         // candidates(bundleID: "../../Documents") and "a/b" → []
 @Test func recentlyUsedDetectsFreshData()   // candidate modified 5 days ago → true; 40 days → false
 ```
@@ -375,7 +375,7 @@ public struct AppState: Codable, Sendable, Equatable {
 }
 public struct Store: Sendable {
   public init(directory: URL)
-  public func load() -> AppState            // missing or unreadable file → AppState()
+  public func load() -> AppState            // missing file → AppState(); a file that exists but cannot be read or decoded is renamed to state.corrupt.json (replacing any earlier one) and load returns AppState() with paused = true
   public func save(_ state: AppState) throws // state.json, ISO 8601 dates, atomic write, creates the directory
   public static func defaultDirectory() -> URL   // ~/Library/Application Support/com.maccleaner.app
 }
@@ -385,21 +385,21 @@ public enum Scheduler {
 }
 ```
 
-`shouldRun`: false when paused; false when `lastRun` is nil (the app stamps it on first launch, Task 9); true when `lastRun` is after `now`; otherwise true when the most recent 03:00 at or before `now` is later than `lastRun`. `weeklyDue`: nil → true, else `now - last >= Limits.weekly`.
+`shouldRun`: false when paused; false when `lastRun` is nil (the app stamps it on first launch, Task 9); false when `lastRun` is after `now` (the app restamps it, Task 9); otherwise true when the most recent 03:00 at or before `now` is later than `lastRun`. `weeklyDue`: nil → true, else `now - last >= Limits.weekly`.
 
 - [ ] **Step 1: Write the failing tests** (calendar: Gregorian, `Asia/Manila`; `at("2026-11-06 02:59")` builds a date in it):
 
 ```swift
 @Test func roundTrip()                 // save then load == state
 @Test func missingFileGivesEmptyState()
-@Test func corruptFileGivesEmptyState() // write "{{{" to state.json → load() == AppState(), no throw
+@Test func corruptFileIsKeptAsideAndPauses() // write "{{{" to state.json → load() has empty history and inventory, paused == true, no throw; state.corrupt.json holds "{{{"; state.json is gone
 @Test func pruneDropsOldEntries()      // history at 366 and 364 days → one left; samples at 31 and 29 days → one left
 @Test func neverStampedDoesNotRun()    { #expect(!Scheduler.shouldRun(now: at("2026-11-06 12:00"), lastRun: nil, paused: false, calendar: cal)) }
 @Test func pausedDoesNotRun()          // lastRun three days ago, paused → false
 @Test func runsAtThreeNotBefore()      // lastRun 11-05 03:00: now 11-06 02:59 → false; now 11-06 03:00 → true
 @Test func oncePerDay()                // lastRun 11-06 03:00, now 11-06 23:00 → false
 @Test func catchesUpAfterSleep()       // lastRun 11-03 03:00, now 11-06 08:00 → true
-@Test func clockMovedBackRuns()        // lastRun 11-07 03:00, now 11-06 12:00 → true
+@Test func clockMovedBackDoesNotRun()  // lastRun 11-07 03:00, now 11-06 12:00 → false
 @Test func weeklyBoundary()            // nil → true; 6 days → false; 7 days → true
 ```
 
@@ -439,7 +439,7 @@ public enum CleanSession {
 
 `live`: `home` is the user's home; `bootVolume` is the volume of `home`; `appDirs` are `/Applications` and `~/Applications`; `runningBundleIDs` from `NSWorkspace.shared.runningApplications`; `appExistsAnywhere` from `NSWorkspace.shared.urlForApplication(withBundleIdentifier:)` or the running list.
 
-`run`, in order: scan apps and `inventory.update`; for each `inventory.due(now)` ID, call `resetClock` when `env.appExistsAnywhere(id)` or `LeftoverRule.recentlyUsed`, else keep it as a leftover; build one gateway and the rules; run daily rules always and weekly rules when `manual` or `Scheduler.weeklyDue`; `markCleaned`; append the record; set `lastScheduledRun = now` when not manual and `lastWeeklyRun = now` when weekly rules ran; `prune`. In `.dryRun` the passed-in `state` is left unchanged.
+`run`, in order: scan apps and `inventory.update`; for each `inventory.due(now)` ID, call `resetClock` when `env.appExistsAnywhere(id)` or `LeftoverRule.recentlyUsed`, else keep it as a leftover; build one gateway and the rules; run daily rules always and weekly rules when `manual` or `Scheduler.weeklyDue`; `markCleaned` only the IDs none of whose `LeftoverRule.candidates` still exist, so a failed trash is retried on the next run; append the record; set `lastScheduledRun = now` when not manual and `lastWeeklyRun = now` when weekly rules ran; `prune`. In `.dryRun` the passed-in `state` is left unchanged.
 
 - [ ] **Step 1: Write the failing tests.** A helper builds a fake home in a `Sandbox` with every allowed root holding old files, plus `Documents/keep.txt`, `Desktop/keep.txt`, `Downloads/keep.txt`, `Library/Application Support/Google/Chrome/Cookies`, `Library/Containers/com.x/data`, and an environment using `s.hooks`, a `FakeRunner`, `appExistsAnywhere: { _ in false }`.
 
@@ -531,18 +531,20 @@ struct StatTile: View { init(title: String, value: String, fraction: Double?) }
 ```
 
 Behaviour:
-- Mode: `#if DEBUG` always `.dryRun`; otherwise `.dryRun` when `MACCLEANER_DRY_RUN=1`, else `.live`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
-- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle.
-- Cleaning runs off the main actor. A second request while `isCleaning` is ignored. State is saved after every run.
+- Mode: `#if DEBUG` always `.dryRun`; otherwise `.live` only when `Info.plist` has `MacCleanerLive` = true, `MACCLEANER_DRY_RUN` is unset or empty, and the argument `--dry-run-report` is absent; else `.dryRun`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
+- `--dry-run-report`: skip the UI, run `CleanSession.run` once with `manual: true` in `.dryRun`, write `dry-run.txt`, print its path and the total bytes, exit 0. Valid in every build.
+- A dry-run process is inert: it never calls `Store.save`, never runs on the schedule (only "Clean now" or `--dry-run-report`), and never registers a login item. It may read the store. This keeps a test launch from stamping `lastScheduledRun` (which would make the first live launch clean at once) and from leaving a login item that later starts the build in live mode.
+- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); on each schedule check, if `lastScheduledRun` is after now (clock moved back), set it to now and save, so scheduled runs do not stall; sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle in `.live` mode.
+- Cleaning runs off the main actor. A second request while `isCleaning` is ignored. In `.live` mode state is saved after every run. In `.dryRun` the returned record is held in memory as `dryRunRecord`; `lastRecord` is `dryRunRecord ?? state.history.last`, and the full view lists it above the history.
 - Menu bar label: SF Symbol `sparkles` plus `Format.menuBarText`. `MenuBarExtra` uses `.menuBarExtraStyle(.window)`.
 - Window content, top to bottom, following mockup option B: 2 × 2 tiles titled DISK, MEMORY, CPU, BATTERY (battery tile hidden when `batteryFraction` is nil); a "Last clean" row with time and amount, with a warning symbol when `lastRecord.hasErrors`, expanding on click to one row per category with `displayName` and `Format.bytes`; "Clean now" button, disabled while cleaning; "Open full view" button; gear menu with "Pause auto-clean" or "Resume auto-clean", and "Quit".
 - When `trashAccess` is false, show: "Trash is skipped. Grant Full Disk Access to include it." with an "Open Settings" button opening `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`.
 - `Info.plist`: `CFBundleIdentifier` `com.maccleaner.app`, `CFBundleName` `Mac Cleaner`, `CFBundleExecutable` `MacCleaner`, `LSUIElement` true, `LSMinimumSystemVersion` `27.0`.
-- `scripts/bundle.sh`: `swift build -c release`; assemble `dist/Mac Cleaner.app/Contents/{MacOS/MacCleaner,Info.plist}`; sign with `codesign --force --options runtime --sign "$IDENTITY"`, where `IDENTITY` is `$CODESIGN_IDENTITY`, else the first "Apple Development" identity from `security find-identity -v -p codesigning`, else `-`.
+- `scripts/bundle.sh [--live]`: only `--live` adds `MacCleanerLive` = true to the bundled `Info.plist`; `swift build -c release`; assemble `dist/Mac Cleaner.app/Contents/{MacOS/MacCleaner,Info.plist}`; sign with `codesign --force --options runtime --sign "$IDENTITY"`, where `IDENTITY` is `$CODESIGN_IDENTITY`, else the first "Apple Development" identity from `security find-identity -v -p codesigning`, else `-`.
 
 - [ ] **Step 1:** Implement the files above.
 - [ ] **Step 2:** Run `swift build` and `swift test`. Expected: build succeeds, all tests pass.
-- [ ] **Step 3:** Run `scripts/bundle.sh`, then `MACCLEANER_DRY_RUN=1 "dist/Mac Cleaner.app/Contents/MacOS/MacCleaner"`. Check by eye: menu bar shows the icon with text like "212 GB · 61%"; no Dock icon; the window shows four tiles that update; "Clean now" finishes and `~/Library/Application Support/com.maccleaner.app/dry-run.txt` exists; no file on the Mac was removed.
+- [ ] **Step 3:** Run `scripts/bundle.sh`, then `"dist/Mac Cleaner.app/Contents/MacOS/MacCleaner" --dry-run-report`. Expected: exit 0, `~/Library/Application Support/com.maccleaner.app/dry-run.txt` exists, `state.json` does not exist. Then launch `MACCLEANER_DRY_RUN=1 "dist/Mac Cleaner.app/Contents/MacOS/MacCleaner"` for a few seconds and confirm the process stays alive; quit it. Checking the window by eye (menu bar text like "212 GB · 61%", no Dock icon, four tiles updating, "Clean now" finishing) is left to the controller or owner if the implementer cannot see the screen.
 - [ ] **Step 4:** Read `dry-run.txt`. Expected: every line starts with the home folder and sits under an allowed root; no line starts with `/Volumes/`. Report anything surprising to the owner instead of fixing it silently.
 - [ ] **Step 5:** Commit: `feat: menu bar app`.
 
@@ -573,7 +575,7 @@ Behaviour, following `full-window.html`:
 
 Every step here needs the owner. Do not do any of them on your own.
 
-- [ ] **Step 1:** Give the owner `~/Library/Application Support/com.maccleaner.app/dry-run.txt` from a fresh dry run, with the total size and the ten largest entries. Wait for an explicit yes. The first live clean is irreversible.
-- [ ] **Step 2:** After the yes: `scripts/bundle.sh`, copy `dist/Mac Cleaner.app` to `/Applications`, launch it. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
+- [ ] **Step 1:** Give the owner `~/Library/Application Support/com.maccleaner.app/dry-run.txt` from a fresh dry run, with the total size and the ten largest entries. Say plainly that the list is a snapshot: caches of apps open at report time, recently used cache folders, and the Trash (unless the report ran with Full Disk Access) will also be cleaned by the rules. The yes covers the rules, not only today's list. Wait for an explicit yes. The first live clean is irreversible.
+- [ ] **Step 2:** After the yes: `scripts/bundle.sh --live`, copy `dist/Mac Cleaner.app` to `/Applications`, launch only that copy, never `dist/`, because the login item pins to where the app first ran. The owner grants Full Disk Access in System Settings. The owner clicks "Clean now", or waits for 03:00.
 - [ ] **Step 3:** Check after the run: the breakdown matches the dry-run list; `/Volumes/json SSD` is untouched; Documents, Desktop and Downloads are untouched.
 - [ ] **Step 4:** With the owner's OK: create a private GitHub repository, push `main`, `staging` and the feature branch, confirm CI is green, open a pull request from `feature/mac-cleaner-v1` into `staging`. The Vercel stages of the owner's pipeline do not apply to this app.
