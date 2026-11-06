@@ -15,7 +15,7 @@ public final class DeletionGateway: @unchecked Sendable {
         let values = try? url.resourceValues(forKeys: [.volumeURLKey, .volumeIsInternalKey])
         return values?.volumeIsInternal == true ? values?.volume : nil
       },
-      remove: { try FileManager.default.removeItem(at: $0) },
+      remove: { try DeletionGateway.removeTree($0) },
       trash: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
   }
 
@@ -37,6 +37,35 @@ public final class DeletionGateway: @unchecked Sendable {
 
   /// Deleted, trashed, or would-be in dry run.
   public var touched: [URL] { lock.withLock { touchedURLs } }
+
+  /// Tools such as dotslash keep caches in read-only folders, which removeItem refuses.
+  static func removeTree(_ url: URL) throws {
+    do {
+      try FileManager.default.removeItem(at: url)
+    } catch {
+      var info = stat()
+      guard lstat(url.path(percentEncoded: false), &info) == 0 else { throw error }
+      makeFoldersWritable(url, device: info.st_dev)
+      try FileManager.default.removeItem(at: url)
+    }
+  }
+
+  /// Adds the owner write bit to readable folders only, so an unreadable folder still means keep.
+  /// Never follows a link and never crosses onto another volume.
+  static func makeFoldersWritable(_ url: URL, device: dev_t) {
+    // A descriptor, not a path: a folder swapped for a link after the listing cannot redirect it.
+    let fd = url.withUnsafeFileSystemRepresentation { path in
+      path.map { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY) } ?? -1
+    }
+    guard fd >= 0 else { return }
+    var info = stat()
+    let eligible = fstat(fd, &info) == 0 && info.st_dev == device && info.st_mode & 0o500 == 0o500
+    if eligible { fchmod(fd, info.st_mode & 0o7777 | S_IWUSR) }
+    close(fd)
+    guard eligible else { return }
+    let children = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+    for child in children ?? [] { makeFoldersWritable(child, device: device) }
+  }
 
   /// Roots are re-read on every call, so a link that appeared after init cannot widen them.
   public func validate(_ url: URL) throws {
@@ -96,7 +125,7 @@ public final class DeletionGateway: @unchecked Sendable {
     path != root && path.utf8.starts(with: (root == "/" ? root : root + "/").utf8)
   }
 
-  private static func size(of url: URL) -> Int64 {
+  static func size(of url: URL) -> Int64 {
     func allocated(_ url: URL) -> Int64 {
       Int64((try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize ?? 0)
     }
