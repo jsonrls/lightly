@@ -18,9 +18,13 @@ public struct ProcessRunner: CommandRunner {
     process.standardError = pipe
     process.standardInput = FileHandle.nullDevice
     let buffer = LockedData()
+    let drained = DispatchSemaphore(value: 0)
     pipe.fileHandleForReading.readabilityHandler = { handle in
       let chunk = handle.availableData
-      if chunk.isEmpty { handle.readabilityHandler = nil } else { buffer.append(chunk) }
+      if chunk.isEmpty {
+        handle.readabilityHandler = nil
+        drained.signal()
+      } else { buffer.append(chunk) }
     }
     let done = DispatchSemaphore(value: 0)
     process.terminationHandler = { _ in done.signal() }
@@ -34,9 +38,10 @@ public struct ProcessRunner: CommandRunner {
       pipe.fileHandleForReading.readabilityHandler = nil
       return nil
     }
-    // Pick up whatever the handler has not read yet.
+    // Wait for the handler to see end of output, so the last chunk is not lost. Bounded: a grandchild
+    // that inherited the pipe can keep it open long after the child exits.
+    _ = drained.wait(timeout: .now() + 1)
     pipe.fileHandleForReading.readabilityHandler = nil
-    buffer.append((try? pipe.fileHandleForReading.readToEnd()) ?? Data())
     return (process.terminationStatus, String(decoding: buffer.data, as: UTF8.self))
   }
 }
@@ -77,12 +82,13 @@ public struct DockerRule: CleanRule {
   private func dataFolder() -> DataFolder {
     let dir = home.appending(path: "Library/Group Containers/group.com.docker")
     for name in ["settings-store.json", "settings.json"] {
-      let file = dir.appending(path: name)
-      guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { continue }
-      guard let data = try? Data(contentsOf: file),
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-      else { return .unknown }
-      if let path = (json["DataFolder"] ?? json["dataFolder"]) as? String, !path.isEmpty {
+      let data: Data
+      do { data = try Data(contentsOf: dir.appending(path: name)) }
+      catch let error as CocoaError where error.code == .fileReadNoSuchFile { continue }
+      catch { return .unknown }  // unreadable is not absent
+      guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return .unknown }
+      if let value = json["DataFolder"] ?? json["dataFolder"] {
+        guard let path = value as? String, !path.isEmpty else { return .unknown }
         return .custom(URL(filePath: path, directoryHint: .isDirectory))
       }
     }
@@ -116,9 +122,12 @@ public struct DockerRule: CleanRule {
   }
 
   public static func parseReclaimed(_ output: String) -> Int64 {
-    guard let range = output.range(of: "Total reclaimed space:") else { return 0 }
-    let words = output[range.upperBound...].split(whereSeparator: { $0 == " " || $0.isNewline })
-    guard let token = words.first else { return 0 }
+    // Classic prune prints "Total reclaimed space: X"; buildx (builder prune) prints "Total:\tX".
+    var rest: Substring?
+    for line in output.split(whereSeparator: \.isNewline) {
+      for marker in ["Total reclaimed space:", "Total:"] where line.hasPrefix(marker) { rest = line.dropFirst(marker.count) }
+    }
+    guard let token = rest?.split(whereSeparator: { $0 == " " || $0 == "\t" }).first else { return 0 }
     let units: [(String, Double)] = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("kB", 1e3), ("B", 1)]
     guard let (suffix, factor) = units.first(where: { token.hasSuffix($0.0) }),
           let value = Double(token.dropLast(suffix.count))

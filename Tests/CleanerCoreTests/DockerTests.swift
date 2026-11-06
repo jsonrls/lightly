@@ -15,7 +15,8 @@ final class FakeRunner: CommandRunner, @unchecked Sendable {
   func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String)? {
     lock.withLock { recorded.append(arguments) }
     if arguments == ["info"] { return (infoStatus, "") }
-    return (pruneStatus, "Total reclaimed space: 1MB")
+    // buildx prints "Total:\t<size>" for `builder prune`, classic prune prints "Total reclaimed space:".
+    return (pruneStatus, arguments.first == "builder" ? "ID  RECLAIMABLE\nTotal:\t1.2GB\n" : "Total reclaimed space: 1MB")
   }
 }
 
@@ -56,7 +57,7 @@ struct DockerTests {
     let runner = FakeRunner()
     let result = rule(runner).run(gateway: gateway(), now: .now)
     #expect(runner.calls == [["info"], ["builder", "prune", "-f"], ["image", "prune", "-f"]])
-    #expect(result.bytesFreed == 2_000_000)
+    #expect(result.bytesFreed == 1_201_000_000)
     #expect(result.errors.isEmpty)
   }
 
@@ -96,6 +97,23 @@ struct DockerTests {
     #expect(result.bytesFreed == 0)
   }
 
+  @Test func unreadableSettingsFolderTouchesNothing() throws {
+    try settings(#"{"DataFolder": "/Volumes/Ext/Docker"}"#)
+    let dir = box.url("Library/Group Containers/group.com.docker").path(percentEncoded: false)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir) }
+    let runner = FakeRunner()
+    _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
+    #expect(runner.calls == [["info"]])
+  }
+
+  @Test func nonStringDataFolderTouchesNothing() throws {
+    try settings(#"{"DataFolder": 5}"#)
+    let runner = FakeRunner()
+    _ = rule(runner).run(gateway: gateway(), now: .now)
+    #expect(runner.calls == [["info"]])
+  }
+
   @Test func pruneFailureIsAnError() {
     let runner = FakeRunner(pruneStatus: 1)
     let result = rule(runner).run(gateway: gateway(), now: .now)
@@ -114,6 +132,7 @@ struct DockerTests {
     #expect(DockerRule.parseReclaimed("Total reclaimed space: 52.5kB") == 52_500)
     #expect(DockerRule.parseReclaimed("Total reclaimed space: 0B") == 0)
     #expect(DockerRule.parseReclaimed("garbage") == 0)
+    #expect(DockerRule.parseReclaimed("Total:\t1.2GB") == 1_200_000_000)
   }
 }
 
@@ -125,6 +144,12 @@ struct ProcessRunnerTests {
   @Test func drainsLargeOutput() {
     let r = ProcessRunner().run(URL(filePath: "/bin/sh"), ["-c", "yes x | head -c 300000"], timeout: 10)
     #expect(r?.status == 0 && r?.output.utf8.count == 300_000)
+  }
+  @Test func grandchildHoldingPipeDoesNotHang() {
+    let start = Date()
+    let r = ProcessRunner().run(URL(filePath: "/bin/sh"), ["-c", "sleep 6 & exit 0"], timeout: 1)
+    #expect(Date().timeIntervalSince(start) < 3)
+    #expect(r?.status == 0)
   }
   @Test func timeoutReturnsNil() {
     #expect(ProcessRunner().run(URL(filePath: "/bin/sleep"), ["5"], timeout: 0.3) == nil)
