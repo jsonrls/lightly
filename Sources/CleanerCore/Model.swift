@@ -18,12 +18,32 @@ public struct CleanResult: Codable, Sendable, Equatable {
   public var category: CleanCategory
   public var bytesFreed: Int64
   public var errors: [String]
+  public init(category: CleanCategory, bytesFreed: Int64, errors: [String]) {
+    self.category = category
+    self.bytesFreed = bytesFreed
+    self.errors = errors
+  }
+
+  /// Runs `op`. `.symlink` and `.notOnBootVolume` are silent skips; any other error is appended as "<name>: <message>".
+  public mutating func record(_ url: URL, _ op: (URL) throws -> Int64) {
+    do {
+      bytesFreed += try op(url)
+    } catch DeletionGateway.Refusal.symlink, DeletionGateway.Refusal.notOnBootVolume {
+    } catch {
+      errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+    }
+  }
 }
 
 public struct RunRecord: Codable, Sendable, Equatable {
   public var date: Date
   public var manual: Bool
   public var results: [CleanResult]
+  public init(date: Date, manual: Bool, results: [CleanResult]) {
+    self.date = date
+    self.manual = manual
+    self.results = results
+  }
   public var totalBytes: Int64 { results.reduce(0) { $0 + $1.bytesFreed } }
   public var hasErrors: Bool { results.contains { !$0.errors.isEmpty } }
 }
@@ -35,9 +55,8 @@ public enum Limits {
   public static let runHour = 3
 }
 
-// Enabled in Task 2 once DeletionGateway exists.
-// public protocol CleanRule: Sendable {
-//   var category: CleanCategory { get }
-//   var weekly: Bool { get }
-//   func run(gateway: DeletionGateway, now: Date) -> CleanResult
-// }
+public protocol CleanRule: Sendable {
+  var category: CleanCategory { get }
+  var weekly: Bool { get }
+  func run(gateway: DeletionGateway, now: Date) -> CleanResult
+}
