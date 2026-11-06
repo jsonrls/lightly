@@ -4,11 +4,11 @@ import SwiftUI
 struct PopoverView: View {
   let model: AppModel
   @State private var expanded = false
+  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      if model.mode == .dryRun { statusLine("Dry run: nothing is deleted") }
-      if model.state.paused { statusLine("Auto-clean paused") }
+      StatusLines(model: model)
       tiles
       lastClean
       if !model.trashAccess { trashNotice }
@@ -16,18 +16,15 @@ struct PopoverView: View {
         .buttonStyle(.borderedProminent)
         .disabled(model.isCleaning)
       HStack {
-        // The window arrives with the full view task.
-        Button {} label: { Text("Open full view").frame(maxWidth: .infinity) }
-          .disabled(true)
+        Button {
+          openWindow(id: "full")
+          NSApp.activate()  // an LSUIElement app is never frontmost on its own
+        } label: { Text("Open full view").frame(maxWidth: .infinity) }
         gearMenu
       }
     }
     .padding(14)
     .frame(width: 280)
-  }
-
-  private func statusLine(_ text: String) -> some View {
-    Text(text).font(.caption.weight(.semibold)).foregroundStyle(.orange)
   }
 
   private var tiles: some View {
@@ -62,25 +59,13 @@ struct PopoverView: View {
       .disabled(model.lastRecord == nil)
 
       if expanded, let record = model.lastRecord {
-        ForEach(record.results, id: \.category) { result in
-          HStack {
-            Text(result.category.displayName)
-            Spacer()
-            Text(Format.bytes(result.bytesFreed))
-          }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        }
+        CategoryRows(record: record)
       }
     }
   }
 
   private func summary(_ record: RunRecord) -> String {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .short
-    formatter.doesRelativeDateFormatting = true  // "Today" like the mockup
-    return "\(formatter.string(from: record.date)) · \(Format.bytes(record.totalBytes))"
+    "\(shortDate(record.date)) · \(Format.bytes(record.totalBytes))"
   }
 
   private var trashNotice: some View {
@@ -104,5 +89,43 @@ struct PopoverView: View {
     .menuIndicator(.hidden)
     .fixedSize()
     .accessibilityLabel("Settings")
+  }
+}
+
+func shortDate(_ date: Date) -> String {
+  let formatter = DateFormatter()
+  formatter.dateStyle = .short
+  formatter.timeStyle = .short
+  formatter.doesRelativeDateFormatting = true  // "Today" like the mockup
+  return formatter.string(from: date)
+}
+
+/// The dry-run and paused lines, shared by the menu bar window and the full view.
+struct StatusLines: View {
+  let model: AppModel
+
+  var body: some View {
+    if model.mode == .dryRun { line("Dry run: nothing is deleted") }
+    if model.state.paused { line("Auto-clean paused") }
+  }
+
+  private func line(_ text: String) -> some View {
+    Text(text).font(.caption.weight(.semibold)).foregroundStyle(.orange)
+  }
+}
+
+struct CategoryRows: View {
+  let record: RunRecord
+
+  var body: some View {
+    ForEach(record.results, id: \.category) { result in
+      HStack {
+        Text(result.category.displayName)
+        Spacer()
+        Text(Format.bytes(result.bytesFreed))
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    }
   }
 }

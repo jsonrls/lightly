@@ -25,5 +25,11 @@ struct MacCleanerApp: App {
       .accessibilityLabel("Mac Cleaner, \(text)")
     }
     .menuBarExtraStyle(.window)
+
+    Window("Mac Cleaner", id: "full") {
+      FullView(model: model)
+        .windowFullScreenBehavior(.disabled)
+    }
+    .defaultSize(width: 760, height: 520)
   }
 }
