@@ -40,20 +40,27 @@ func runDryRunReport() -> Never {
     print("\(record.totalBytes) bytes")
     exit(0)
   } catch {
-    NSLog("Could not write dry-run.txt: \(error)")
+    NSLog("Could not write dry-run.txt: %@", "\(error)")
     exit(1)
   }
 }
 
 @MainActor @Observable final class AppModel {
   var stats: StatsSnapshot
-  var samples: [(date: Date, stats: StatsSnapshot)] = []  // last 60 minutes
   var state = AppState()
   var isCleaning = false
   var trashAccess: Bool
   private(set) var unsaved = false  // the last save failed; retried on each schedule check
   private(set) var dryRunRecord: RunRecord?
   var lastRecord: RunRecord? { dryRunRecord ?? state.history.last }
+  private var explained: (date: Date, insight: CleanInsight)?
+  var insight: CleanInsight? { explained?.date == lastRecord?.date ? explained?.insight : nil }
+
+  /// Called when a window shows the record, so a run nobody looks at costs nothing.
+  func explainLastRecord() async {
+    guard let record = lastRecord, explained?.date != record.date else { return }
+    if let insight = await CleanInsight.explain(record) { explained = (record.date, insight) }
+  }
 
   let mode: DeletionGateway.Mode
   private let systemStats: SystemStats
@@ -91,7 +98,7 @@ func runDryRunReport() -> Never {
       }
     }
     if Bundle.main.bundleURL.pathExtension == "app", SMAppService.mainApp.status == .notRegistered {
-      do { try SMAppService.mainApp.register() } catch { NSLog("Login item not registered: \(error)") }
+      do { try SMAppService.mainApp.register() } catch { NSLog("Login item not registered: %@", "\(error)") }
     }
   }
 
@@ -116,15 +123,13 @@ func runDryRunReport() -> Never {
       unsaved = false
     } catch {
       unsaved = true
-      NSLog("State not saved: \(error)")
+      NSLog("State not saved: %@", "\(error)")
     }
   }
 
   private func sampleStats() {
     let now = Date()
     stats = systemStats.sample()
-    samples.append((now, stats))
-    samples.removeAll { $0.date < now - 3600 }
     let sampledToday = state.diskSamples.last.map { Calendar.current.isDate($0.day, inSameDayAs: now) } ?? false
     if !sampledToday, stats.diskTotalBytes > 0 {  // a total of 0 means the read failed
       state.diskSamples.append(DiskSample(day: Calendar.current.startOfDay(for: now), freeBytes: stats.diskFreeBytes))
@@ -157,7 +162,7 @@ func runDryRunReport() -> Never {
         save()
       } else {
         dryRunRecord = record
-        do { _ = try writeDryRunList(touched, to: storeDirectory) } catch { NSLog("Could not write dry-run.txt: \(error)") }
+        do { _ = try writeDryRunList(touched, to: storeDirectory) } catch { NSLog("Could not write dry-run.txt: %@", "\(error)") }
       }
     }
   }

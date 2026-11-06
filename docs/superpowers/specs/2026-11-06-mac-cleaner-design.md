@@ -40,6 +40,7 @@ These make the app a failure even if everything else works:
 - **Deleting anything on an external volume.** The owner's external drive is `/Volumes/json SSD`. The app touches the internal boot disk only. This includes the Trash folder of any external volume.
 - Deleting from Documents, Desktop, Downloads, Photos, Mail, or browser data such as cookies, passwords and history.
 - Asking the owner to confirm routine cleaning.
+- Letting Apple Intelligence decide what gets deleted. The on-device model only describes a finished run, in the window, and any number it states is checked against the run's facts.
 
 ## Cleaning rules
 
@@ -93,9 +94,10 @@ Mockups: `.superpowers/brainstorm/80948-1793955094/content/menubar-popover.html`
 - Gear menu: "Pause auto-clean", "Quit".
 
 **Full view window.** A normal resizable window, not fullscreen:
-- The same four tiles, each with a small history graph: disk over 30 days; memory, CPU and battery over 60 minutes.
+- The same four stats as rings, larger than in the menu bar window. No history graphs: the owner removed them.
 - Left panel: last clean, by category.
-- Right panel: cleaning history, one line per run, with a monthly total.
+- Right panel: cleaning history, newest first, five runs per page, with a monthly total. The window's height fits its content; only its width can be resized.
+- An ask box for questions such as "What's using my disk?". Apple Intelligence rewords measured facts on device. It has no tools, and any answer with an unmeasured figure or delete advice is replaced by the measured facts.
 - "Clean now" and "Pause auto-clean" buttons.
 
 **(call)** Smaller points:
@@ -111,7 +113,7 @@ Decided by the owner:
 - Owner's Mac only for now; public later.
 
 **(call)**:
-- Swift 6 and SwiftUI, with `MenuBarExtra` for the menu bar and Swift Charts for graphs. No third-party dependencies.
+- Swift 6 and SwiftUI, with `MenuBarExtra` for the menu bar. No third-party dependencies.
 - Targets macOS 27 (the owner runs macOS 27.2, Xcode 27.2, Apple silicon). Supporting older systems is a publishing-time task.
 - Not sandboxed, because the sandbox blocks cleaning other apps' files. Hardened runtime on, so Developer ID signing and notarization can be added later without rework.
 - One app process. It schedules its own runs; no separate background daemon.

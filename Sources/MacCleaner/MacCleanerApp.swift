@@ -7,7 +7,7 @@ struct MacCleanerApp: App {
 
   init() {
     if Launch.isDryRunReport { runDryRunReport() }
-    NSLog("Mac Cleaner mode: \(Launch.mode)")
+    NSLog("Mac Cleaner mode: %@", "\(Launch.mode)")
     let model = AppModel(mode: Launch.mode)
     model.start()  // here, not onAppear: window content is only built on the first click
     _model = State(initialValue: model)
@@ -30,6 +30,7 @@ struct MacCleanerApp: App {
       FullView(model: model)
         .windowFullScreenBehavior(.disabled)
     }
-    .defaultSize(width: 760, height: 520)
+    .defaultSize(width: 760, height: 480)
+    .windowResizability(.contentSize)
   }
 }
