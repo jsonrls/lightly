@@ -74,6 +74,8 @@ All **(call)**, built to enforce the anti-goals:
 - Every run is recorded: time, category, bytes freed, errors.
 - Debug builds are dry-run only, so development never cleans the real home folder.
 - Installing never deletes at once: the first automatic clean waits for the first 03:00 after first launch.
+- A clock moved backwards never triggers a clean.
+- A state file that cannot be read is kept aside as `state.corrupt.json`, and the app starts paused, so a lost pause never turns into a clean.
 - Before the first real clean on the owner's Mac, the owner reads the dry-run list from that Mac and says yes.
 
 ## What the owner sees

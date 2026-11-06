@@ -375,7 +375,7 @@ public struct AppState: Codable, Sendable, Equatable {
 }
 public struct Store: Sendable {
   public init(directory: URL)
-  public func load() -> AppState            // missing or unreadable file → AppState()
+  public func load() -> AppState            // missing file → AppState(); a file that exists but cannot be read or decoded is renamed to state.corrupt.json (replacing any earlier one) and load returns AppState() with paused = true
   public func save(_ state: AppState) throws // state.json, ISO 8601 dates, atomic write, creates the directory
   public static func defaultDirectory() -> URL   // ~/Library/Application Support/com.maccleaner.app
 }
@@ -385,21 +385,21 @@ public enum Scheduler {
 }
 ```
 
-`shouldRun`: false when paused; false when `lastRun` is nil (the app stamps it on first launch, Task 9); true when `lastRun` is after `now`; otherwise true when the most recent 03:00 at or before `now` is later than `lastRun`. `weeklyDue`: nil → true, else `now - last >= Limits.weekly`.
+`shouldRun`: false when paused; false when `lastRun` is nil (the app stamps it on first launch, Task 9); false when `lastRun` is after `now` (the app restamps it, Task 9); otherwise true when the most recent 03:00 at or before `now` is later than `lastRun`. `weeklyDue`: nil → true, else `now - last >= Limits.weekly`.
 
 - [ ] **Step 1: Write the failing tests** (calendar: Gregorian, `Asia/Manila`; `at("2026-11-06 02:59")` builds a date in it):
 
 ```swift
 @Test func roundTrip()                 // save then load == state
 @Test func missingFileGivesEmptyState()
-@Test func corruptFileGivesEmptyState() // write "{{{" to state.json → load() == AppState(), no throw
+@Test func corruptFileIsKeptAsideAndPauses() // write "{{{" to state.json → load() has empty history and inventory, paused == true, no throw; state.corrupt.json holds "{{{"; state.json is gone
 @Test func pruneDropsOldEntries()      // history at 366 and 364 days → one left; samples at 31 and 29 days → one left
 @Test func neverStampedDoesNotRun()    { #expect(!Scheduler.shouldRun(now: at("2026-11-06 12:00"), lastRun: nil, paused: false, calendar: cal)) }
 @Test func pausedDoesNotRun()          // lastRun three days ago, paused → false
 @Test func runsAtThreeNotBefore()      // lastRun 11-05 03:00: now 11-06 02:59 → false; now 11-06 03:00 → true
 @Test func oncePerDay()                // lastRun 11-06 03:00, now 11-06 23:00 → false
 @Test func catchesUpAfterSleep()       // lastRun 11-03 03:00, now 11-06 08:00 → true
-@Test func clockMovedBackRuns()        // lastRun 11-07 03:00, now 11-06 12:00 → true
+@Test func clockMovedBackDoesNotRun()  // lastRun 11-07 03:00, now 11-06 12:00 → false
 @Test func weeklyBoundary()            // nil → true; 6 days → false; 7 days → true
 ```
 
@@ -534,7 +534,7 @@ Behaviour:
 - Mode: `#if DEBUG` always `.dryRun`; otherwise `.dryRun` when `MACCLEANER_DRY_RUN=1` or when launched with the argument `--dry-run-report`, else `.live`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
 - `--dry-run-report`: skip the UI, run `CleanSession.run` once with `manual: true` in `.dryRun`, write `dry-run.txt`, print its path and the total bytes, exit 0. Valid in every build.
 - A dry-run process is inert: it never calls `Store.save`, never runs on the schedule (only "Clean now" or `--dry-run-report`), and never registers a login item. It may read the store. This keeps a test launch from stamping `lastScheduledRun` (which would make the first live launch clean at once) and from leaving a login item that later starts the build in live mode.
-- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle in `.live` mode.
+- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); on each schedule check, if `lastScheduledRun` is after now (clock moved back), set it to now and save, so scheduled runs do not stall; sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle in `.live` mode.
 - Cleaning runs off the main actor. A second request while `isCleaning` is ignored. In `.live` mode state is saved after every run. In `.dryRun` the returned record is held in memory as `dryRunRecord`; `lastRecord` is `dryRunRecord ?? state.history.last`, and the full view lists it above the history.
 - Menu bar label: SF Symbol `sparkles` plus `Format.menuBarText`. `MenuBarExtra` uses `.menuBarExtraStyle(.window)`.
 - Window content, top to bottom, following mockup option B: 2 × 2 tiles titled DISK, MEMORY, CPU, BATTERY (battery tile hidden when `batteryFraction` is nil); a "Last clean" row with time and amount, with a warning symbol when `lastRecord.hasErrors`, expanding on click to one row per category with `displayName` and `Format.bytes`; "Clean now" button, disabled while cleaning; "Open full view" button; gear menu with "Pause auto-clean" or "Resume auto-clean", and "Quit".
