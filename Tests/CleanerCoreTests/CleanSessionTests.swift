@@ -23,7 +23,8 @@ struct CleanSessionTests {
     "Library/Mobile Documents", "Library/Keychains", "Library/Safari", "Library/Containers", "Library/Group Containers",
     "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
     "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
-    "Library/Application Support/Arc",
+    "Library/Application Support/Arc", "Library/Application Support/com.operasoftware.Opera",
+    "Library/Application Support/com.operasoftware.OperaGX",
   ]
   /// What `fakeHome` plants for the rules to remove, one or more per category.
   static let removable = [
@@ -220,6 +221,7 @@ struct CleanSessionTests {
     #expect(s.tree() == before)
     #expect(!record.hasErrors)
     #expect(state.inventory.removed["com.gone.app"] != nil)  // nothing went, so it is not marked cleaned
+    #expect(!runner.calls.contains { $0.contains("prune") })
   }
 
   // MARK: Leftovers
@@ -231,7 +233,7 @@ struct CleanSessionTests {
     let (record, _) = CleanSession.run(env: env(), state: &state, now: now, manual: false)
     #expect(!record.hasErrors)
     for path in Self.leftoverCandidates { #expect(!s.exists(path), "\(path)") }
-    // All seven in the Trash: a cache or log rule running first would delete some for good, or look like recent use.
+    // All seven in the Trash: a cache rule running first would delete some for good.
     #expect(trashedCount() == 7)
     #expect(state.inventory.removed["com.gone.app"] == nil)
     #expect(!state.inventory.installed.contains("com.gone.app"))
@@ -257,22 +259,49 @@ struct CleanSessionTests {
     #expect(state.inventory.removed["com.gone.app"] == now)
   }
 
+  @Test func browserDataResetsClockAndTrashesNothing() {
+    fakeHome()
+    plantLeftover(ageDays: 40)
+    s.file(Self.leftoverData + "/Default/Login Data", ageDays: 40)
+    var state = dueState()
+    _ = CleanSession.run(env: env(), state: &state, now: now, manual: false)
+    #expect(s.exists(Self.leftoverData + "/Default/Login Data"))
+    #expect(trashedCount() == 0)
+    #expect(state.inventory.removed["com.gone.app"] == now)
+  }
+
   @Test func failedTrashIsRetried() {
     fakeHome()
-    // Application Support only: the log rule would date a Logs candidate as recent use and delay the retry.
     oldFolder(Self.leftoverData)
+    oldFolder("Library/Logs/com.gone.app")  // the log rule empties it after the failed trash, refreshing the folder date
     var failing = s.hooks
     failing.trash = { _ in throw CocoaError(.fileWriteNoPermission) }
     var state = dueState()
     let firstSeen = state.inventory.removed["com.gone.app"]
     let (record, _) = CleanSession.run(env: env(hooks: failing), state: &state, now: now, manual: false)
-    #expect(record.results.first { $0.category == .leftovers }?.errors.count == 1)
+    #expect(record.results.first { $0.category == .leftovers }?.errors.count == 2)
     #expect(s.exists(Self.leftoverData))
+    #expect(!s.exists("Library/Logs/com.gone.app/data"))
     #expect(state.inventory.removed["com.gone.app"] == firstSeen)
     #expect(state.inventory.installed.contains("com.gone.app"))
 
     let later = now.addingTimeInterval(Limits.day)
     _ = CleanSession.run(env: env(), state: &state, now: later, manual: false)
+    #expect(!s.exists(Self.leftoverData))
+    #expect(!s.exists("Library/Logs/com.gone.app"))
+    #expect(state.inventory.removed["com.gone.app"] == nil)
+  }
+
+  @Test func logCleanupDoesNotResetClock() {
+    fakeHome()
+    plantLeftover(ageDays: 40)
+    var state = dueState()
+    state.inventory.removed["com.gone.app"] = now.addingTimeInterval(-29 * Limits.day)
+    // Still in the grace period: the log rule empties Logs/<id>, which refreshes the folder date.
+    _ = CleanSession.run(env: env(), state: &state, now: now, manual: false)
+    #expect(s.exists("Library/Logs/com.gone.app") && !s.exists("Library/Logs/com.gone.app/data"))
+
+    _ = CleanSession.run(env: env(), state: &state, now: now.addingTimeInterval(2 * Limits.day), manual: false)
     #expect(!s.exists(Self.leftoverData))
     #expect(state.inventory.removed["com.gone.app"] == nil)
   }

@@ -176,6 +176,51 @@ struct LeftoversTests {
     #expect(LeftoverRule.candidates(libraryDir: lib, bundleID: "com.ok-1.app").count == 7)
   }
 
+  @Test func browserDataIsKept() {
+    let sb = Sandbox()
+    sb.file("Library/Application Support/com.gone.app/Default/Login Data", ageDays: 40)
+    sb.file("Library/Caches/com.gone.app/x", ageDays: 40)
+    let g = sb.gateway(roots: ["Library"])
+    let r = LeftoversRule(sb).run(gateway: g, now: Date())
+    #expect(g.touched.isEmpty && r.errors.isEmpty)
+    #expect(sb.exists("Library/Application Support/com.gone.app/Default/Login Data"))
+    #expect(sb.exists("Library/Caches/com.gone.app/x"))
+  }
+
+  @Test(arguments: ["Login Data", "Cookies", "places.sqlite"])
+  func browserFilesAreFoundAtAnyDepth(_ name: String) {
+    let sb = Sandbox()
+    sb.file("Library/WebKit/com.gone.app/a/b/c/\(name)", ageDays: 40)
+    #expect(LeftoverRule.holdsBrowserData(libraryDir: sb.url("Library"), bundleID: "com.gone.app"))
+  }
+
+  @Test func foldersLinksAndOtherFilesAreNotBrowserData() {
+    let sb = Sandbox()
+    sb.file("Elsewhere/Login Data")
+    sb.link("Library/Application Support/com.gone.app/profile", to: sb.url("Elsewhere"))
+    sb.dir("Library/Application Support/com.gone.app/Cookies")
+    sb.file("Library/Application Support/com.gone.app/notes.txt")
+    sb.file("Library/Preferences/com.gone.app.plist")
+    #expect(!LeftoverRule.holdsBrowserData(libraryDir: sb.url("Library"), bundleID: "com.gone.app"))
+  }
+
+  @Test(arguments: ["Library/Application Support/com.gone.app", "Library/Application Support/com.gone.app/db"])
+  func unreadableFolderCountsAsBrowserData(_ locked: String) {
+    let sb = Sandbox()
+    sb.file("Library/Application Support/com.gone.app/db/x", ageDays: 40)
+    let path = sb.url(locked).path(percentEncoded: false)
+    try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path) }
+    #expect(LeftoverRule.holdsBrowserData(libraryDir: sb.url("Library"), bundleID: "com.gone.app"))
+  }
+
+  @Test func freshFolderDateIsNotUse() {
+    let sb = Sandbox()
+    sb.file("Library/Logs/com.gone.app/x", ageDays: 40)  // the folder keeps today's date
+    sb.dir("Library/Caches/com.gone.app")  // empty and fresh
+    #expect(!LeftoverRule.recentlyUsed(libraryDir: sb.url("Library"), bundleID: "com.gone.app", now: Date()))
+  }
+
   @Test func recentlyUsedDetectsFreshData() {
     let sb = Sandbox()
     let lib = sb.url("Library")

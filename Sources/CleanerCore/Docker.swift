@@ -104,6 +104,7 @@ public struct DockerRule: CleanRule {
     switch dataFolder() {
     case .unknown: return result
     case .custom(let url) where !isOnBootVolume(url): return result
+    case .internalDefault where !isOnBootVolume(home): return result  // the default data folder sits under home
     default: break
     }
     if mode == .dryRun { return result }

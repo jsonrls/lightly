@@ -45,7 +45,8 @@ public struct CleanEnvironment: Sendable {
   }
 
   public var deniedRoots: [URL] {
-    let browsers = ["Google/Chrome", "Firefox", "BraveSoftware", "Microsoft Edge", "Arc"]
+    let browsers = ["Google/Chrome", "Firefox", "BraveSoftware", "Microsoft Edge", "Arc",
+                    "com.operasoftware.Opera", "com.operasoftware.OperaGX"]
     return ([
       "Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music", "Library/Mail", "Library/Messages",
       "Library/Mobile Documents", "Library/Keychains", "Library/Safari", "Library/Containers",
@@ -63,7 +64,8 @@ public enum CleanSession {
     let library = env.home.appending(path: "Library", directoryHint: .isDirectory)
     var leftovers: [String] = []
     for id in next.inventory.due(now: now) {
-      if env.appExistsAnywhere(id) || LeftoverRule.recentlyUsed(libraryDir: library, bundleID: id, now: now) {
+      if env.appExistsAnywhere(id) || LeftoverRule.recentlyUsed(libraryDir: library, bundleID: id, now: now)
+        || LeftoverRule.holdsBrowserData(libraryDir: library, bundleID: id) {
         next.inventory.resetClock(id, now: now)
       } else {
         leftovers.append(id)
@@ -73,8 +75,7 @@ public enum CleanSession {
     let gateway = DeletionGateway(allowedRoots: env.allowedRoots, deniedRoots: env.deniedRoots,
                                   bootVolume: env.bootVolume, mode: env.mode, hooks: env.hooks)
     let rules: [any CleanRule] = [
-      // First: the cache rule would delete for good what belongs in the Trash, and the log rule
-      // refreshes the date of a candidate folder, which LeftoverRule reads as recent use.
+      // First: the cache and log rules would delete for good what belongs in the Trash.
       LeftoverRule(libraryDir: library, bundleIDs: leftovers),
       CacheRule(cachesDir: library.appending(path: "Caches", directoryHint: .isDirectory),
                 runningBundleIDs: env.runningBundleIDs, installedBundleIDs: next.inventory.installed),

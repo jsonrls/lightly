@@ -75,6 +75,12 @@ struct DockerTests {
     #expect(runner.calls == [["info"]])
   }
 
+  @Test func defaultLocationOffBootVolumeSkips() {
+    let runner = FakeRunner()
+    _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
+    #expect(runner.calls == [["info"]])
+  }
+
   @Test func internalDataFolderPrunes() throws {
     try settings(#"{"DataFolder": "/Users/x/Library/Containers/docker"}"#)
     let runner = FakeRunner()
