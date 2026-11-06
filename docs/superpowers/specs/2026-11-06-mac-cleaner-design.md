@@ -29,7 +29,6 @@ Built for the owner's own Mac first. It will be published to other people later.
 - Malware scanning, app uninstaller, large-file finder, duplicate finder.
 - Freeing memory or quitting apps. The tiles only monitor.
 - Cleaning system folders. No admin password, ever.
-- Settings beyond "Pause auto-clean" and "Quit".
 - Notifications.
 - Mac App Store release, licensing, auto-update, localization.
 
@@ -53,7 +52,7 @@ These make the app a failure even if everything else works:
 | Developer caches | See below | Once a week **(call)** | Delete |
 | Docker | Docker CLI | Build cache and dangling images only | Docker prune commands |
 
-Runs once a day. **(call)** The run happens at 03:00 local time; if the Mac was asleep or off at 03:00, it runs at the next wake or launch. Resuming after a pause never triggers a catch-up clean.
+Runs every 3 hours, as the owner asked; the first design said once a day at 03:00. If the Mac was asleep or off when a run was due, it runs at the next wake or launch. Resuming after a pause never triggers a catch-up clean.
 
 Details, all **(call)**:
 
@@ -75,7 +74,7 @@ All **(call)**, built to enforce the anti-goals:
 - Every run is recorded: time, category, bytes freed, errors.
 - Debug builds are dry-run only, so development never cleans the real home folder. A release build deletes only if it was made with `scripts/bundle.sh --live`.
 - Scheduled runs stop while state cannot be saved, because a lost stamp or pause would repeat a clean.
-- Installing never deletes at once: the first automatic clean waits for the first 03:00 after first launch.
+- Installing never deletes at once: the first automatic clean waits 3 hours after first launch.
 - A clock moved backwards never triggers a clean.
 - A state file that cannot be read is kept aside as `state.corrupt.json`, and the app starts paused, so a lost pause never turns into a clean.
 - Before the first real clean on the owner's Mac, the owner reads the dry-run list from that Mac and says yes.
@@ -91,7 +90,9 @@ Mockups: `.superpowers/brainstorm/80948-1793955094/content/menubar-popover.html`
 - "Last clean" line with time and amount freed. Clicking it shows the breakdown by category.
 - "Clean now" button.
 - "Open full view" button.
-- Gear menu: "Pause auto-clean", "Quit".
+- Gear icon: opens the settings window. Power icon: quits.
+
+**Settings window:** open at login, Apple Intelligence on or off, auto-clean on or off, how often to clean (1, 3, 6, 12 or 24 hours, default 3), a switch for each cleaning category, an "Always kept" list enforced by the gateway, Full Disk Access status, and About.
 
 **Full view window.** A normal resizable window, not fullscreen:
 - The same four stats as rings, larger than in the menu bar window. No history graphs: the owner removed them.

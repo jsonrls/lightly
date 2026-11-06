@@ -9,10 +9,6 @@ import SwiftUI
   private(set) var isWorking = false
   private var measured: (date: Date, folders: [FolderSize])?
 
-  var isAvailable: Bool {
-    if case .available = SystemLanguageModel.default.availability { true } else { false }
-  }
-
   func ask(_ model: AppModel) {
     let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !question.isEmpty, !isWorking else { return }
@@ -24,7 +20,8 @@ import SwiftUI
         lastClean: model.lastRecord.map { "\(shortDate($0.date)), \(Format.bytes($0.totalBytes)) freed" },
         monthFreed: Format.monthlyTotal(model.state.history, now: Date(), calendar: .current),
         paused: model.state.paused,
-        fullAccess: model.trashAccess)
+        fullAccess: model.trashAccess,
+        intervalHours: model.state.settings.intervalHours)
       answer = await Self.respond(to: question, snapshot)
       isWorking = false
     }
@@ -58,13 +55,13 @@ import SwiftUI
   }
 }
 
-/// Hidden on a Mac without Apple Intelligence.
+/// Hidden on a Mac without Apple Intelligence, or when the owner switched it off.
 struct AskPanel: View {
   let model: AppModel
   @State private var ask = AskModel()
 
   var body: some View {
-    if ask.isAvailable {
+    if CleanInsight.isModelAvailable, model.state.settings.useAppleIntelligence {
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 8) {
           TextField("Ask about your Mac, such as: What's using my disk?", text: $ask.question)

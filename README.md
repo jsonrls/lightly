@@ -2,7 +2,7 @@
 
 A native macOS menu bar app that cleans junk by itself and shows disk, memory, CPU and battery at a glance.
 
-It runs once a day at 03:00, or at the next wake if the Mac was asleep. There is nothing to press.
+It runs every 3 hours, day and night, or at the next wake if the Mac was asleep. There is nothing to press. The gear icon opens Settings, where you can change how often it runs, switch off what it cleans, and add folders to an "Always kept" list.
 
 ## What it cleans
 

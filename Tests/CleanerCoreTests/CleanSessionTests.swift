@@ -12,6 +12,25 @@ struct CleanSessionTests {
   let now = Date()
   let runner = FakeRunner()
 
+  @Test func aSwitchedOffCategoryIsNotRun() {
+    fakeHome()
+    var state = AppState()
+    state.settings.disabled = [.logs]
+    let record = CleanSession.run(env: env(), state: &state, now: now, manual: true).record
+    #expect(s.exists("Library/Logs/old.log"))
+    #expect(!record.results.contains { $0.category == .logs })
+    #expect(!s.exists("Library/Caches/com.old.tool"))
+  }
+
+  @Test func anAlwaysKeptFolderSurvivesWithNoWarning() {
+    fakeHome()
+    var state = AppState()
+    state.settings.keptFolders = [s.url("Library/Caches/com.old.tool").path(percentEncoded: false)]
+    let record = CleanSession.run(env: env(), state: &state, now: now, manual: true).record
+    #expect(s.exists("Library/Caches/com.old.tool"))
+    #expect(!record.hasErrors)
+  }
+
   static let allowed = [
     "Library/Caches", "Library/Logs", ".Trash", "Library/Application Support", "Library/Preferences",
     "Library/Saved Application State", "Library/HTTPStorages", "Library/WebKit",

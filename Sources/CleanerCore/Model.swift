@@ -24,11 +24,11 @@ public struct CleanResult: Codable, Sendable, Equatable {
     self.errors = errors
   }
 
-  /// Runs `op`. `.symlink` and `.notOnBootVolume` are silent skips; any other error is appended as "<name>: <message>".
+  /// Runs `op`. `.symlink`, `.notOnBootVolume` and `.kept` are silent skips; any other error is appended as "<name>: <message>".
   public mutating func record(_ url: URL, _ op: (URL) throws -> Int64) {
     do {
       bytesFreed += try op(url)
-    } catch DeletionGateway.Refusal.symlink, DeletionGateway.Refusal.notOnBootVolume {
+    } catch DeletionGateway.Refusal.symlink, DeletionGateway.Refusal.notOnBootVolume, DeletionGateway.Refusal.kept {
     } catch {
       errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
     }
@@ -52,7 +52,6 @@ public enum Limits {
   public static let day: TimeInterval = 86_400
   public static let logAge = 7 * day, trashAge = 30 * day, leftoverGrace = 30 * day
   public static let cacheIdle = 7 * day, derivedDataIdle = 7 * day, weekly = 7 * day
-  public static let runHour = 3
 }
 
 public protocol CleanRule: Sendable {

@@ -48,8 +48,10 @@ public enum AskBrief {
     let monthFreed: Int64
     let paused: Bool
     let fullAccess: Bool
+    let intervalHours: Int
 
-    public init(stats: StatsSnapshot, folders: [FolderSize], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool) {
+    public init(stats: StatsSnapshot, folders: [FolderSize], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool, intervalHours: Int = 3) {
+      self.intervalHours = intervalHours
       self.stats = stats
       self.folders = folders
       self.lastClean = lastClean
@@ -73,7 +75,7 @@ public enum AskBrief {
     if !snapshot.fullAccess { lines.append("Not measured: Documents, Desktop, Downloads, Movies, Music, Pictures, Trash") }
     if let lastClean = snapshot.lastClean { lines.append("Last clean: \(lastClean)") }
     lines.append("Freed this month: \(Format.bytes(snapshot.monthFreed))")
-    lines.append(snapshot.paused ? "Auto-clean: paused" : "Auto-clean: runs by itself every day at 3 AM")
+    lines.append(snapshot.paused ? "Auto-clean: paused" : "Auto-clean: runs by itself every \(snapshot.intervalHours) hours")
     return lines.joined(separator: "\n")
   }
 
