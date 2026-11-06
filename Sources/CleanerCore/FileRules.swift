@@ -73,6 +73,8 @@ public struct LogRule: CleanRule {
     let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
     guard let items = FileManager.default.enumerator(at: logsDir, includingPropertiesForKeys: keys) else { return result }
     for case let item as URL in items {
+      // Crash reports stay: the owner may want them.
+      if items.level == 1, item.lastPathComponent == "DiagnosticReports" { items.skipDescendants(); continue }
       guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
             let date = values.contentModificationDate, now.timeIntervalSince(date) >= Limits.logAge
       else { continue }
@@ -104,7 +106,8 @@ public struct TrashRule: CleanRule {
 
   public func run(gateway: DeletionGateway, now: Date) -> CleanResult {
     var result = CleanResult(category: category, bytesFreed: 0, errors: [])
-    guard let entries = try? FileManager.default.contentsOfDirectory(at: trashDir, includingPropertiesForKeys: nil)
+    // Hidden entries stay: .DS_Store holds Finder's "Put Back" locations.
+    guard let entries = try? FileManager.default.contentsOfDirectory(at: trashDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
     else { return result }
     for entry in entries {
       guard let added = dateAdded(entry), now.timeIntervalSince(added) >= Limits.trashAge else { continue }

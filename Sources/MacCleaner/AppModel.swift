@@ -17,10 +17,12 @@ enum Launch {
   }()
 }
 
-private func writeDryRunList(_ touched: [URL], to directory: URL) throws -> URL {
+let trashWarning = "# Trash not readable: list is incomplete. Grant Full Disk Access to include it."
+
+private func writeDryRunList(_ touched: [URL], to directory: URL, warning: String? = nil) throws -> URL {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let file = directory.appending(path: "dry-run.txt")
-  let lines = touched.map { $0.path(percentEncoded: false) + "\n" }.joined()
+  let lines = (warning.map { $0 + "\n" } ?? "") + touched.map { $0.path(percentEncoded: false) + "\n" }.joined()
   try lines.write(to: file, atomically: true, encoding: .utf8)
   return file
 }
@@ -31,7 +33,9 @@ func runDryRunReport() -> Never {
   var state = Store(directory: directory).peek()
   let (record, touched) = CleanSession.run(env: CleanEnvironment.live(mode: .dryRun), state: &state, now: Date(), manual: true)
   do {
-    let file = try writeDryRunList(touched, to: directory)
+    let warning = TrashRule.hasAccess(trashDir: URL.homeDirectory.appending(path: ".Trash", directoryHint: .isDirectory)) ? nil : trashWarning
+    let file = try writeDryRunList(touched, to: directory, warning: warning)
+    if let warning { print(warning) }
     print(file.path(percentEncoded: false))
     print("\(record.totalBytes) bytes")
     exit(0)

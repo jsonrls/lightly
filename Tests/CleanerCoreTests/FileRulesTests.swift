@@ -113,6 +113,23 @@ struct FileRulesTests {
     #expect(box.exists("Trash/recent") && box.exists("Trash/unknown"))
   }
 
+  @Test func trashKeepsHiddenFiles() {
+    box.file("Trash/.DS_Store")
+    box.file("Trash/item")
+    let rule = TrashRule(trashDir: box.url("Trash"), dateAdded: { [now] _ in now.addingTimeInterval(-40 * Limits.day) })
+    _ = rule.run(gateway: gw(), now: now)
+    #expect(box.exists("Trash/.DS_Store"))
+    #expect(!box.exists("Trash/item"))
+  }
+
+  @Test func logsKeepDiagnosticReports() {
+    box.file("Logs/DiagnosticReports/a.ips", ageDays: 30)
+    box.file("Logs/x/old.log", ageDays: 30)
+    _ = LogRule(logsDir: box.url("Logs")).run(gateway: gw(), now: now)
+    #expect(box.exists("Logs/DiagnosticReports/a.ips"))
+    #expect(!box.exists("Logs/x/old.log"))
+  }
+
   @Test func unreadableTrashIsQuiet() {
     let dir = box.url("Trash")
     let r = TrashRule(trashDir: dir).run(gateway: gw(), now: now)
