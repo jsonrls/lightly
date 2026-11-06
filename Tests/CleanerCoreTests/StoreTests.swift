@@ -23,10 +23,32 @@ struct StoreTests {
     #expect(store.load() == AppState())
   }
 
-  @Test func corruptFileGivesEmptyState() throws {
+  @Test func corruptFileIsKeptAsideAndPauses() throws {
     box.dir("state-dir")
     try Data("{{{".utf8).write(to: box.url("state-dir/state.json"))
-    #expect(store.load() == AppState())
+    let s = store.load()
+    #expect(s.history.isEmpty && s.inventory == AppInventory())
+    #expect(s.paused)
+    #expect(try String(contentsOf: box.url("state-dir/state.corrupt.json"), encoding: .utf8) == "{{{")
+    #expect(!box.exists("state-dir/state.json"))
+  }
+
+  @Test func secondCorruptionReplacesAside() throws {
+    box.dir("state-dir")
+    try Data("first".utf8).write(to: box.url("state-dir/state.json"))
+    _ = store.load()
+    try Data("second".utf8).write(to: box.url("state-dir/state.json"))
+    #expect(store.load().paused)
+    #expect(try String(contentsOf: box.url("state-dir/state.corrupt.json"), encoding: .utf8) == "second")
+    #expect(!box.exists("state-dir/state.json"))
+  }
+
+  @Test func savedFileIsISO8601StateJSON() throws {
+    var s = AppState()
+    s.lastScheduledRun = Date(timeIntervalSince1970: 1_700_000_000)
+    try store.save(s)
+    let text = try String(contentsOf: box.url("state-dir/state.json"), encoding: .utf8)
+    #expect(text.contains("\"2023-11-14T22:13:20Z\""))
   }
 
   @Test func saveFailureThrows() {

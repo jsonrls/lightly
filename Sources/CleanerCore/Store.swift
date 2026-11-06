@@ -30,12 +30,25 @@ public struct Store: Sendable {
 
   private var file: URL { directory.appending(path: "state.json") }
 
-  /// Missing or unreadable state is empty state, and an empty state never triggers a run (see `Scheduler.shouldRun`).
+  /// Missing file is a fresh install. A file that exists but cannot be read or decoded is moved to
+  /// state.corrupt.json and the app starts paused, so a lost pause never turns into a surprise clean.
   public func load() -> AppState {
-    guard let data = try? Data(contentsOf: file) else { return AppState() }
+    let data: Data
+    do { data = try Data(contentsOf: file) } catch let e as CocoaError where e.code == .fileReadNoSuchFile {
+      return AppState()
+    } catch { return setAside() }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
-    return (try? decoder.decode(AppState.self, from: data)) ?? AppState()
+    return (try? decoder.decode(AppState.self, from: data)) ?? setAside()
+  }
+
+  private func setAside() -> AppState {
+    let aside = directory.appending(path: "state.corrupt.json")
+    try? FileManager.default.removeItem(at: aside)
+    try? FileManager.default.moveItem(at: file, to: aside)  // if this fails we still start paused
+    var s = AppState()
+    s.paused = true
+    return s
   }
 
   public func save(_ state: AppState) throws {

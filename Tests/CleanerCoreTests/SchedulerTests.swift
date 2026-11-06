@@ -32,7 +32,8 @@ struct SchedulerTests {
 
   @Test func oncePerDay() { #expect(!run(now: "2026-11-06 23:00", last: "2026-11-06 03:00")) }
   @Test func catchesUpAfterSleep() { #expect(run(now: "2026-11-06 08:00", last: "2026-11-03 03:00")) }
-  @Test func clockMovedBackRuns() { #expect(run(now: "2026-11-06 12:00", last: "2026-11-07 03:00")) }
+  @Test func clockMovedBackDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: "2026-11-07 03:00")) }
+  @Test func catchesUpBeforeThreeUsingPreviousDay() { #expect(run(now: "2026-11-06 02:00", last: "2026-11-04 03:00")) }
 
   @Test func weeklyBoundary() {
     let now = at("2026-11-13 03:00")
