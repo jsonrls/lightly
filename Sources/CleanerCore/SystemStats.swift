@@ -30,6 +30,8 @@ public final class SystemStats: @unchecked Sendable {
   private let lock = NSLock()
   private var previous: CPUTicks?
 
+  private let host = mach_host_self()  // one send-right for the object's lifetime
+
   public init(volume: URL) { self.volume = volume }
 
   public func sample() -> StatsSnapshot {
@@ -56,11 +58,11 @@ public final class SystemStats: @unchecked Sendable {
     var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
     let kr = withUnsafeMutablePointer(to: &info) {
       $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-        host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+        host_statistics64(host, HOST_VM_INFO64, $0, &count)
       }
     }
     var pageSize: vm_size_t = 0
-    guard kr == KERN_SUCCESS, host_page_size(mach_host_self(), &pageSize) == KERN_SUCCESS else { return 0 }
+    guard kr == KERN_SUCCESS, host_page_size(host, &pageSize) == KERN_SUCCESS else { return 0 }
     let used = (UInt64(info.active_count) + UInt64(info.wire_count) + UInt64(info.compressor_page_count)) * UInt64(pageSize)
     let physical = ProcessInfo.processInfo.physicalMemory
     guard physical > 0 else { return 0 }
@@ -72,7 +74,7 @@ public final class SystemStats: @unchecked Sendable {
     var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
     let kr = withUnsafeMutablePointer(to: &info) {
       $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-        host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+        host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
       }
     }
     guard kr == KERN_SUCCESS else { return 0 }
@@ -86,8 +88,9 @@ public final class SystemStats: @unchecked Sendable {
   }
 
   private func battery() -> Double? {
-    let blob = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-    let list = IOPSCopyPowerSourcesList(blob).takeRetainedValue() as [CFTypeRef]
+    guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+      let list = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef]
+    else { return nil }
     for source in list {
       // Description is owned by the blob (Get rule), so no release needed.
       guard let d = IOPSGetPowerSourceDescription(blob, source)?.takeUnretainedValue() as? [String: Any],

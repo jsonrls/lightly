@@ -4,7 +4,7 @@ public enum Format {
   public static func bytes(_ n: Int64) -> String {
     let f = ByteCountFormatter()
     f.countStyle = .file
-    f.allowsNonnumericFormatting = false  // "0 KB" instead of "Zero KB"
+    f.allowsNonnumericFormatting = false  // "0 bytes" instead of "Zero KB"
     return f.string(fromByteCount: n)
   }
 
