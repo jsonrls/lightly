@@ -158,7 +158,7 @@ extension CleanResult {
 }
 ```
 
-`validate` checks in this order: the URL itself is a symlink → `.symlink`; resolve symlinks in the path, then it must be strictly inside an allowed root (never the root itself) → `.outsideAllowedRoots`; inside or equal to a denied root → `.denied`; `hooks.volumeOf(resolved) != bootVolume` → `.notOnBootVolume`. Roots are resolved the same way before comparing. `Hooks.live.volumeOf` returns `volumeURLKey` only when `volumeIsInternalKey` is true. Size is the sum of `totalFileAllocatedSizeKey` without following links. In `.dryRun` nothing is removed; size and `touched` are still reported.
+`validate` checks in this order: the URL itself is a symlink → `.symlink`; resolve symlinks in the path, then it must be strictly inside an allowed root (never the root itself) → `.outsideAllowedRoots`; inside or equal to a denied root → `.denied`; `hooks.volumeOf(resolved) != bootVolume` → `.notOnBootVolume`. On every call, an allowed root whose own URL is a symlink is ignored (so `refusesSymlinkedRoot` gets `.outsideAllowedRoots`, even when the link appeared after the gateway was built); the remaining roots, and all denied roots, are resolved the same way before comparing. `Hooks.live.volumeOf` returns `volumeURLKey` only when `volumeIsInternalKey` is true. Size is the sum of `totalFileAllocatedSizeKey` without following links. In `.dryRun` nothing is removed; size and `touched` are still reported.
 
 Test helper, used by every later task:
 
@@ -171,7 +171,7 @@ struct Sandbox {
   func url(_ path: String) -> URL
   func exists(_ path: String) -> Bool
   func tree() -> [String]   // sorted relative paths under root
-  var hooks: DeletionGateway.Hooks   // volumeOf: constant URL(filePath: "/"); trash: moves into root/__trash
+  var hooks: DeletionGateway.Hooks   // volumeOf: constant URL(filePath: "/"); trash: moves into root/__trash, appending " 2", " 3"… on a name collision
   func gateway(roots: [String], denied: [String] = [], mode: DeletionGateway.Mode = .live,
                hooks: DeletionGateway.Hooks? = nil) -> DeletionGateway   // bootVolume "/"
 }
@@ -287,7 +287,7 @@ public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gate
 @Test func dueAtThirtyDays()                // removed 29 days ago → not due; 30 days → due
 @Test func appleNeverDue()                  // removed["com.apple.Foo"] 90 days ago → due(now) is empty
 @Test func scanReadsBundleIDs()             // Apps/Foo.app and Apps/Utilities/Bar.app fixtures → both IDs; a folder without Info.plist ignored
-@Test func trashesOnlyTheSevenCandidates()  // all seven paths for "com.gone.app" land in __trash; Application Support/com.other.app and Containers/com.gone.app still exist
+@Test func trashesOnlyTheSevenCandidates()  // all seven paths for "com.gone.app" are gone from Library and __trash holds seven entries; Application Support/com.other.app and Containers/com.gone.app still exist
 @Test func hostileIDsYieldNothing()         // candidates(bundleID: "../../Documents") and "a/b" → []
 @Test func recentlyUsedDetectsFreshData()   // candidate modified 5 days ago → true; 40 days → false
 ```
@@ -531,9 +531,11 @@ struct StatTile: View { init(title: String, value: String, fraction: Double?) }
 ```
 
 Behaviour:
-- Mode: `#if DEBUG` always `.dryRun`; otherwise `.dryRun` when `MACCLEANER_DRY_RUN=1`, else `.live`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
-- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle.
-- Cleaning runs off the main actor. A second request while `isCleaning` is ignored. State is saved after every run.
+- Mode: `#if DEBUG` always `.dryRun`; otherwise `.dryRun` when `MACCLEANER_DRY_RUN=1` or when launched with the argument `--dry-run-report`, else `.live`. After a dry run, write `touched` paths, one per line, to `<store dir>/dry-run.txt`.
+- `--dry-run-report`: skip the UI, run `CleanSession.run` once with `manual: true` in `.dryRun`, write `dry-run.txt`, print its path and the total bytes, exit 0. Valid in every build.
+- A dry-run process is inert: it never calls `Store.save`, never runs on the schedule (only "Clean now" or `--dry-run-report`), and never registers a login item. It may read the store. This keeps a test launch from stamping `lastScheduledRun` (which would make the first live launch clean at once) and from leaving a login item that later starts the build in live mode.
+- `start()`: load state; if `lastScheduledRun` is nil, set it to now and save (so nothing is cleaned at first launch); sample stats every 10 s; check `Scheduler.shouldRun` every 60 s and on `NSWorkspace.didWakeNotification`; append one `DiskSample` per calendar day; register `SMAppService.mainApp` once when its status is `.notRegistered` and the process runs from an `.app` bundle in `.live` mode.
+- Cleaning runs off the main actor. A second request while `isCleaning` is ignored. In `.live` mode state is saved after every run. In `.dryRun` the returned record is held in memory as `dryRunRecord`; `lastRecord` is `dryRunRecord ?? state.history.last`, and the full view lists it above the history.
 - Menu bar label: SF Symbol `sparkles` plus `Format.menuBarText`. `MenuBarExtra` uses `.menuBarExtraStyle(.window)`.
 - Window content, top to bottom, following mockup option B: 2 × 2 tiles titled DISK, MEMORY, CPU, BATTERY (battery tile hidden when `batteryFraction` is nil); a "Last clean" row with time and amount, with a warning symbol when `lastRecord.hasErrors`, expanding on click to one row per category with `displayName` and `Format.bytes`; "Clean now" button, disabled while cleaning; "Open full view" button; gear menu with "Pause auto-clean" or "Resume auto-clean", and "Quit".
 - When `trashAccess` is false, show: "Trash is skipped. Grant Full Disk Access to include it." with an "Open Settings" button opening `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`.
@@ -542,7 +544,7 @@ Behaviour:
 
 - [ ] **Step 1:** Implement the files above.
 - [ ] **Step 2:** Run `swift build` and `swift test`. Expected: build succeeds, all tests pass.
-- [ ] **Step 3:** Run `scripts/bundle.sh`, then `MACCLEANER_DRY_RUN=1 "dist/Mac Cleaner.app/Contents/MacOS/MacCleaner"`. Check by eye: menu bar shows the icon with text like "212 GB · 61%"; no Dock icon; the window shows four tiles that update; "Clean now" finishes and `~/Library/Application Support/com.maccleaner.app/dry-run.txt` exists; no file on the Mac was removed.
+- [ ] **Step 3:** Run `scripts/bundle.sh`, then `"dist/Mac Cleaner.app/Contents/MacOS/MacCleaner" --dry-run-report`. Expected: exit 0, `~/Library/Application Support/com.maccleaner.app/dry-run.txt` exists, `state.json` does not exist. Then launch `MACCLEANER_DRY_RUN=1 "dist/Mac Cleaner.app/Contents/MacOS/MacCleaner"` for a few seconds and confirm the process stays alive; quit it. Checking the window by eye (menu bar text like "212 GB · 61%", no Dock icon, four tiles updating, "Clean now" finishing) is left to the controller or owner if the implementer cannot see the screen.
 - [ ] **Step 4:** Read `dry-run.txt`. Expected: every line starts with the home folder and sits under an allowed root; no line starts with `/Volumes/`. Report anything surprising to the owner instead of fixing it silently.
 - [ ] **Step 5:** Commit: `feat: menu bar app`.
 
