@@ -84,7 +84,7 @@ public struct LeftoverRule: CleanRule {
   }
 
   /// lstat, so a dangling link counts as present.
-  private static func exists(_ url: URL) -> Bool {
+  static func exists(_ url: URL) -> Bool {
     (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))) != nil
   }
 

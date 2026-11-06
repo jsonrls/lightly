@@ -82,7 +82,7 @@ public final class DeletionGateway: @unchecked Sendable {
 
   // realpath, not resolvingSymlinksInPath: it fails on a missing path, keeps /private,
   // and returns the on-disk case, so a case variant cannot slip past a denied root.
-  private static func realPath(_ url: URL) -> String? {
+  static func realPath(_ url: URL) -> String? {
     url.withUnsafeFileSystemRepresentation { path in
       guard let path, let resolved = realpath(path, nil) else { return nil }
       defer { free(resolved) }
