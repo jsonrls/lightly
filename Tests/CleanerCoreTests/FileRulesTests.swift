@@ -15,8 +15,11 @@ struct FileRulesTests {
   }
 
   @Test func skipsRunningAppAndItsHelpers() {
-    box.file("Caches/com.foo.app/a", ageDays: 30)
-    box.file("Caches/com.foo.app.helper/a", ageDays: 30)
+    // dir() ages the folder itself: file() ages only the leaf, which would leave the folder fresh.
+    for n in ["com.foo.app", "com.foo.app.helper"] {
+      box.file("Caches/\(n)/a", ageDays: 30)
+      box.dir("Caches/\(n)", ageDays: 30)
+    }
     _ = cache().run(gateway: gw(), now: now)
     #expect(box.exists("Caches/com.foo.app") && box.exists("Caches/com.foo.app.helper"))
   }
@@ -30,7 +33,10 @@ struct FileRulesTests {
 
   @Test func skipsAppleAndSkipList() {
     let names = ["com.apple.Safari", "CloudKit", "ms-playwright", "ms-playwright-go", "Cypress", "Homebrew"]
-    for n in names { box.file("Caches/\(n)/a", ageDays: 30) }
+    for n in names {
+      box.file("Caches/\(n)/a", ageDays: 30)
+      box.dir("Caches/\(n)", ageDays: 30)
+    }
     _ = cache().run(gateway: gw(), now: now)
     for n in names { #expect(box.exists("Caches/\(n)"), "\(n)") }
   }
@@ -46,15 +52,23 @@ struct FileRulesTests {
   @Test func continuesAfterFailure() {
     box.file("Caches/com.bar.app/a")
     box.file("Caches/SomeTool", ageDays: 8)
+    // Fails the first remove whichever entry the listing yields first, so order cannot hide an early abort.
+    final class Once: @unchecked Sendable {
+      private let lock = NSLock()
+      private var fired = false
+      func first() -> Bool { lock.withLock { defer { fired = true }; return !fired } }
+    }
+    let once = Once()
     var hooks = box.hooks
     let real = hooks.remove
     hooks.remove = { url in
-      if url.lastPathComponent == "com.bar.app" { throw CocoaError(.fileWriteNoPermission) }
+      if once.first() { throw CocoaError(.fileWriteNoPermission) }
       try real(url)
     }
     let r = cache().run(gateway: gw(hooks: hooks), now: now)
     #expect(r.errors.count == 1)
-    #expect(!box.exists("Caches/SomeTool"))
+    // Exactly one of the two survives: the failed one. The other proves the loop went on.
+    #expect(box.exists("Caches/com.bar.app") != box.exists("Caches/SomeTool"))
   }
 
   @Test func symlinkEntryIsSilent() {
