@@ -44,8 +44,8 @@ public struct Store: Sendable {
 
   private func setAside() -> AppState {
     let aside = directory.appending(path: "state.corrupt.json")
-    try? FileManager.default.removeItem(at: aside)
-    try? FileManager.default.moveItem(at: file, to: aside)  // if this fails we still start paused
+    // rename(2), not FileManager: it replaces an older aside atomically, and deletion is reserved for DeletionGateway.
+    _ = rename(file.path(percentEncoded: false), aside.path(percentEncoded: false))  // on failure we still start paused
     var s = AppState()
     s.paused = true
     return s
