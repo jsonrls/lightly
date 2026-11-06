@@ -265,7 +265,7 @@ public struct AppInventory: Codable, Sendable, Equatable {
   public mutating func update(present: Set<String>, now: Date)   // no-op when present is empty
   public func due(now: Date) -> [String]              // missing ≥ 30 days, never com.apple.*
   public mutating func resetClock(_ id: String, now: Date)
-  public mutating func markCleaned(_ ids: [String])   // drop from removed
+  public mutating func markCleaned(_ ids: [String])   // drop from removed and installed
 }
 public enum InstalledApps { public static func scan(_ dirs: [URL]) -> Set<String> }   // *.app at depth 1 and 2, CFBundleIdentifier from Contents/Info.plist
 public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gateway.trash
@@ -275,7 +275,7 @@ public struct LeftoverRule: CleanRule {   // .leftovers, weekly false, uses gate
 }
 ```
 
-`update`: an ID in `installed` but not in `present` gets `removed[id] = now` unless already set; an ID in `present` is added to `installed` and dropped from `removed`. `candidates` returns, under `libraryDir`: `Application Support/<id>`, `Caches/<id>`, `Preferences/<id>.plist`, `Saved Application State/<id>.savedState`, `HTTPStorages/<id>`, `WebKit/<id>`, `Logs/<id>`; it returns `[]` for an ID that does not match `^[A-Za-z0-9.-]+$` or contains `..`.
+`update`: an ID in `installed` but not in `present` gets `removed[id] = now` unless already set; an ID in `present` is added to `installed` and dropped from `removed`. `candidates` returns, under `libraryDir`: `Application Support/<id>`, `Caches/<id>`, `Preferences/<id>.plist`, `Saved Application State/<id>.savedState`, `HTTPStorages/<id>`, `WebKit/<id>`, `Logs/<id>`; it returns `[]` for an ID that is not reverse-DNS form, `[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+` as a whole match. `InstalledApps.scan` returns `[]` when any existing folder it should list cannot be listed, so a partial scan never reads as "apps removed"; an absent folder is tolerated. `newestModification` returns `.distantFuture` when anything under the path cannot be read, so "cannot prove idle" means keep.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -439,7 +439,7 @@ public enum CleanSession {
 
 `live`: `home` is the user's home; `bootVolume` is the volume of `home`; `appDirs` are `/Applications` and `~/Applications`; `runningBundleIDs` from `NSWorkspace.shared.runningApplications`; `appExistsAnywhere` from `NSWorkspace.shared.urlForApplication(withBundleIdentifier:)` or the running list.
 
-`run`, in order: scan apps and `inventory.update`; for each `inventory.due(now)` ID, call `resetClock` when `env.appExistsAnywhere(id)` or `LeftoverRule.recentlyUsed`, else keep it as a leftover; build one gateway and the rules; run daily rules always and weekly rules when `manual` or `Scheduler.weeklyDue`; `markCleaned`; append the record; set `lastScheduledRun = now` when not manual and `lastWeeklyRun = now` when weekly rules ran; `prune`. In `.dryRun` the passed-in `state` is left unchanged.
+`run`, in order: scan apps and `inventory.update`; for each `inventory.due(now)` ID, call `resetClock` when `env.appExistsAnywhere(id)` or `LeftoverRule.recentlyUsed`, else keep it as a leftover; build one gateway and the rules; run daily rules always and weekly rules when `manual` or `Scheduler.weeklyDue`; `markCleaned` only the IDs none of whose `LeftoverRule.candidates` still exist, so a failed trash is retried on the next run; append the record; set `lastScheduledRun = now` when not manual and `lastWeeklyRun = now` when weekly rules ran; `prune`. In `.dryRun` the passed-in `state` is left unchanged.
 
 - [ ] **Step 1: Write the failing tests.** A helper builds a fake home in a `Sandbox` with every allowed root holding old files, plus `Documents/keep.txt`, `Desktop/keep.txt`, `Downloads/keep.txt`, `Library/Application Support/Google/Chrome/Cookies`, `Library/Containers/com.x/data`, and an environment using `s.hooks`, a `FakeRunner`, `appExistsAnywhere: { _ in false }`.
 
