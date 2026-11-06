@@ -1,0 +1,128 @@
+import Foundation
+
+public protocol CommandRunner: Sendable {
+  /// nil on launch failure or timeout.
+  func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String)?
+}
+
+public struct ProcessRunner: CommandRunner {
+  public init() {}
+
+  public func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String)? {
+    let process = Process()
+    process.executableURL = executable
+    process.arguments = arguments
+    // One pipe for stdout and stderr, drained as it arrives so a chatty child never blocks on a full pipe.
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    process.standardInput = FileHandle.nullDevice
+    let buffer = LockedData()
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+      let chunk = handle.availableData
+      if chunk.isEmpty { handle.readabilityHandler = nil } else { buffer.append(chunk) }
+    }
+    let done = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in done.signal() }
+    do { try process.run() } catch {
+      pipe.fileHandleForReading.readabilityHandler = nil
+      return nil
+    }
+    if done.wait(timeout: .now() + timeout) == .timedOut {
+      process.terminate()
+      if done.wait(timeout: .now() + 2) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+      pipe.fileHandleForReading.readabilityHandler = nil
+      return nil
+    }
+    // Pick up whatever the handler has not read yet.
+    pipe.fileHandleForReading.readabilityHandler = nil
+    buffer.append((try? pipe.fileHandleForReading.readToEnd()) ?? Data())
+    return (process.terminationStatus, String(decoding: buffer.data, as: UTF8.self))
+  }
+}
+
+private final class LockedData: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+  func append(_ data: Data) { lock.withLock { storage.append(data) } }
+  var data: Data { lock.withLock { storage } }
+}
+
+public struct DockerRule: CleanRule {
+  public let category = CleanCategory.docker
+  public let weekly = true
+  private let home: URL
+  private let runner: any CommandRunner
+  private let mode: DeletionGateway.Mode
+  private let isOnBootVolume: @Sendable (URL) -> Bool
+  private let candidates: [URL]
+
+  public static let defaultCandidates: [URL] = [
+    "/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app/Contents/Resources/bin/docker",
+  ].map { URL(filePath: $0) }
+
+  public init(home: URL, runner: any CommandRunner, mode: DeletionGateway.Mode,
+              isOnBootVolume: @escaping @Sendable (URL) -> Bool,
+              candidates: [URL] = DockerRule.defaultCandidates) {
+    self.home = home
+    self.runner = runner
+    self.mode = mode
+    self.isOnBootVolume = isOnBootVolume
+    self.candidates = candidates
+  }
+
+  /// Result of reading Docker Desktop's settings: unknown means the rule must not touch Docker.
+  private enum DataFolder { case internalDefault, custom(URL), unknown }
+
+  private func dataFolder() -> DataFolder {
+    let dir = home.appending(path: "Library/Group Containers/group.com.docker")
+    for name in ["settings-store.json", "settings.json"] {
+      let file = dir.appending(path: name)
+      guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { continue }
+      guard let data = try? Data(contentsOf: file),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+      else { return .unknown }
+      if let path = (json["DataFolder"] ?? json["dataFolder"]) as? String, !path.isEmpty {
+        return .custom(URL(filePath: path, directoryHint: .isDirectory))
+      }
+    }
+    return .internalDefault
+  }
+
+  public func run(gateway: DeletionGateway, now: Date) -> CleanResult {
+    var result = CleanResult(category: category, bytesFreed: 0, errors: [])
+    guard let docker = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) })
+    else { return result }
+    // Never launches Docker: a stopped daemon makes `info` fail and we stop.
+    guard let info = runner.run(docker, ["info"], timeout: 10), info.status == 0 else { return result }
+    switch dataFolder() {
+    case .unknown: return result
+    case .custom(let url) where !isOnBootVolume(url): return result
+    default: break
+    }
+    if mode == .dryRun { return result }
+    for arguments in [["builder", "prune", "-f"], ["image", "prune", "-f"]] {
+      guard let out = runner.run(docker, arguments, timeout: 120) else {
+        result.errors.append("docker \(arguments[0]) prune: failed to run or timed out")
+        continue
+      }
+      if out.status != 0 {
+        result.errors.append("docker \(arguments[0]) prune: exit \(out.status)")
+      } else {
+        result.bytesFreed += Self.parseReclaimed(out.output)
+      }
+    }
+    return result
+  }
+
+  public static func parseReclaimed(_ output: String) -> Int64 {
+    guard let range = output.range(of: "Total reclaimed space:") else { return 0 }
+    let words = output[range.upperBound...].split(whereSeparator: { $0 == " " || $0.isNewline })
+    guard let token = words.first else { return 0 }
+    let units: [(String, Double)] = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("kB", 1e3), ("B", 1)]
+    guard let (suffix, factor) = units.first(where: { token.hasSuffix($0.0) }),
+          let value = Double(token.dropLast(suffix.count))
+    else { return 0 }
+    return Int64((value * factor).rounded())
+  }
+}
