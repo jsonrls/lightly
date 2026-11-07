@@ -9,6 +9,40 @@ A native macOS menu bar app that cleans junk by itself. There is nothing to pres
 
 It lives in the menu bar as a small white logo and, by default, runs every hour, day and night, or at the next wake if the Mac was asleep.
 
+## Features
+
+**Cleans by itself**
+- Runs every hour, or every 3, 6 or 12 hours, or once a day
+- Catches up at the next wake if the Mac was asleep
+- Runs quietly in the background, with no Dock icon and no main window
+- Opens at login
+- Can be paused at any time, with a manual "Clean now" for when you want space right away
+
+**Stays safe**
+- Never touches external drives, personal folders or system folders
+- Never asks for an admin password
+- Skips apps that are open, and moves app leftovers to the Trash first
+- Lets you switch off any category, and keep any file or folder for good
+- Offers a dry run that lists what a clean would remove, and deletes nothing
+
+**Shows what's happening**
+- Disk, memory, CPU and battery as live rings
+- The last clean, broken down by category
+- A summary of this month's cleaning
+- A paged history of every clean
+
+**Dusty, your on-device assistant**
+- Describes each clean in plain words, and explains any problems
+- Chats about your Mac, remembers follow-up questions and writes lists
+- Scans for the biggest items and explains what they probably are
+- Runs on Apple Intelligence, so nothing leaves your Mac
+
+## Requirements
+
+- macOS 27
+- Full Disk Access, only for cleaning the Trash
+- A Mac with Apple Intelligence, only for Dusty. Everything else works without it.
+
 ## What you see
 
 - **Menu bar window:** click the logo for disk, memory, CPU and battery as rings, and the last clean with a summary of this month's cleaning. A "Clean now" button appears only when "Clean automatically" is off. The bottom row has an "Open full view" link, the gear icon and a red quit button.
@@ -86,3 +120,7 @@ The first automatic clean waits one full interval after the first launch, an hou
 ## Design
 
 The design and plan are in `docs/superpowers/`. Logo files are in `design/logo/`. Dusty's loading animation is based on the Loading State component from [beautifului.dev](https://www.beautifului.dev/) (MIT).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
