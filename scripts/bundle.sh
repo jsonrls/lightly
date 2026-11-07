@@ -9,7 +9,7 @@ swift build -c release
 app="dist/Lightly.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$(swift build -c release --show-bin-path)/MacCleaner" "$app/Contents/MacOS/MacCleaner"
-cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+cp Resources/AppIcon.icns Resources/MenuBarIcon.svg "$app/Contents/Resources/"
 cp Resources/Info.plist "$app/Contents/Info.plist"  # replaces any earlier --live plist
 if [ "${1:-}" = "--live" ]; then
   /usr/libexec/PlistBuddy -c "Add :MacCleanerLive bool true" "$app/Contents/Info.plist"

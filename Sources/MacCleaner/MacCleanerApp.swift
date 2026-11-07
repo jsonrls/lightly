@@ -5,6 +5,15 @@ import CleanerCore
 struct MacCleanerApp: App {
   @State private var model: AppModel
 
+  /// A template image: macOS shows it white on a dark menu bar and dark on a light one.
+  private let menuBarIcon: NSImage? = {
+    guard let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "svg"),
+          let image = NSImage(contentsOf: url) else { return nil }
+    image.size = NSSize(width: 18, height: 18)
+    image.isTemplate = true
+    return image
+  }()
+
   init() {
     if Launch.isDryRunReport { runDryRunReport() }
     NSLog("Lightly mode: %@", "\(Launch.mode)")
@@ -19,7 +28,7 @@ struct MacCleanerApp: App {
     } label: {
       let text = Format.menuBarText(freeBytes: model.stats.diskFreeBytes, memoryFraction: model.stats.memoryUsedFraction)
       HStack {
-        Image(systemName: "sparkles")
+        if let menuBarIcon { Image(nsImage: menuBarIcon) } else { Image(systemName: "sparkles") }
         Text(text)
       }
       .accessibilityLabel("Lightly, \(text)")

@@ -27,7 +27,7 @@ struct PopoverView: View {
 
   private var header: some View {
     HStack(spacing: 8) {
-      Image(systemName: "sparkles").foregroundStyle(.tint)
+      Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 26, height: 26)
       Text("Lightly").font(.headline)
       Spacer()
       settingsButton
