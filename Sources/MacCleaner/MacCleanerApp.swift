@@ -5,9 +5,18 @@ import CleanerCore
 struct MacCleanerApp: App {
   @State private var model: AppModel
 
+  /// A template image: macOS shows it white on a dark menu bar and dark on a light one.
+  private let menuBarIcon: NSImage? = {
+    guard let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "svg"),
+          let image = NSImage(contentsOf: url) else { return nil }
+    image.size = NSSize(width: 18, height: 18)
+    image.isTemplate = true
+    return image
+  }()
+
   init() {
     if Launch.isDryRunReport { runDryRunReport() }
-    NSLog("Mac Cleaner mode: %@", "\(Launch.mode)")
+    NSLog("Lightly mode: %@", "\(Launch.mode)")
     let model = AppModel(mode: Launch.mode)
     model.start()  // here, not onAppear: window content is only built on the first click
     _model = State(initialValue: model)
@@ -18,22 +27,21 @@ struct MacCleanerApp: App {
       PopoverView(model: model)
     } label: {
       let text = Format.menuBarText(freeBytes: model.stats.diskFreeBytes, memoryFraction: model.stats.memoryUsedFraction)
-      HStack {
-        Image(systemName: "sparkles")
-        Text(text)
+      Group {
+        if let menuBarIcon { Image(nsImage: menuBarIcon) } else { Image(systemName: "sparkles") }
       }
-      .accessibilityLabel("Mac Cleaner, \(text)")
+      .accessibilityLabel("Lightly, \(text)")  // the numbers stay for VoiceOver
     }
     .menuBarExtraStyle(.window)
 
-    Window("Mac Cleaner", id: "full") {
+    Window("Lightly", id: "full") {
       FullView(model: model)
         .windowFullScreenBehavior(.disabled)
     }
     .defaultSize(width: 760, height: 480)
     .windowResizability(.contentSize)
 
-    Window("Mac Cleaner Settings", id: "settings") {
+    Window("Lightly Settings", id: "settings") {
       SettingsView(model: model)
         .windowFullScreenBehavior(.disabled)
     }

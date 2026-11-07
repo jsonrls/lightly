@@ -160,9 +160,9 @@ struct SettingsView: View {
   private var about: some View {
     card {
       HStack(spacing: 10) {
-        Image(systemName: "sparkles").font(.title2).foregroundStyle(.tint)
+        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 44, height: 44)
         VStack(alignment: .leading, spacing: 1) {
-          Text("Mac Cleaner").font(.headline)
+          Text("Lightly").font(.headline)
           Text("Version \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "dev")")
             .font(.caption)
             .foregroundStyle(.secondary)

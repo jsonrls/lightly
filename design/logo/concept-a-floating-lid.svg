@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#7CE0E8"/>
+      <stop offset="0.55" stop-color="#4A9BF5"/>
+      <stop offset="1" stop-color="#4A5FE8"/>
+    </linearGradient>
+    <linearGradient id="bin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E4EEFF"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF3B0"/>
+      <stop offset="1" stop-color="#FFC24B"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <path d="M322 452 H702 L668 790 Q663 830 622 830 H402 Q361 830 356 790 Z" fill="url(#bin)"/>
+  <g fill="#4A86EE" opacity="0.55">
+    <rect x="432" y="520" width="26" height="238" rx="13"/>
+    <rect x="499" y="520" width="26" height="238" rx="13"/>
+    <rect x="566" y="520" width="26" height="238" rx="13"/>
+  </g>
+  <g transform="rotate(-11 512 378)">
+    <rect x="292" y="356" width="440" height="50" rx="25" fill="#FFFFFF"/>
+    <path d="M446 356 V336 Q446 310 472 310 H552 Q578 310 578 336 V356" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+  </g>
+  <path d="M716 170 C724 226 742 244 798 252 C742 260 724 278 716 334 C708 278 690 260 634 252 C690 244 708 226 716 170 Z" fill="url(#spark)"/>
+</svg>
