@@ -57,6 +57,13 @@ struct ChatTests {
     #expect(PixelLoader.opacity(cell: 3, at: peak + 0.65) == 1)
   }
 
+  @Test(arguments: [(1, "every hour"), (3, "every 3 hours"), (24, "once a day")])
+  func factsNameTheScheduleInPlainWords(hours: Int, words: String) {
+    let stats = StatsSnapshot(diskFreeBytes: 1, diskTotalBytes: 2, memoryUsedFraction: 0, cpuFraction: 0, batteryFraction: nil)
+    let snapshot = AskBrief.Snapshot(stats: stats, folders: [], lastClean: nil, monthFreed: 0, paused: false, fullAccess: true, intervalHours: hours)
+    #expect(AskBrief.facts(snapshot).contains("Auto-clean: runs by itself \(words)"))
+  }
+
   @Test func numberedListMarkersAreNotFigures() {
     let facts = "Xcode.app: 24.52 GB\nClaude: 13.5 GB"
     #expect(AskBrief.isSafe("1. Xcode.app: 24.52 GB\n2. Claude: 13.5 GB", facts: facts, question: "List them"))

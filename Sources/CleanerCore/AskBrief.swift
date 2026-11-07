@@ -78,7 +78,7 @@ public enum AskBrief {
     let intervalHours: Int
     var largest: [FolderSize]
 
-    public init(stats: StatsSnapshot, folders: [FolderSize], largest: [FolderSize] = [], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool, intervalHours: Int = 3) {
+    public init(stats: StatsSnapshot, folders: [FolderSize], largest: [FolderSize] = [], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool, intervalHours: Int = CleanSettings().intervalHours) {
       self.intervalHours = intervalHours
       self.largest = largest
       self.stats = stats
@@ -106,7 +106,7 @@ public enum AskBrief {
     if !snapshot.fullAccess { lines.append("Not measured: Documents, Desktop, Downloads, Movies, Music, Pictures, Trash") }
     if let lastClean = snapshot.lastClean { lines.append("Last clean: \(lastClean)") }
     lines.append("Freed this month: \(Format.bytes(snapshot.monthFreed))")
-    lines.append(snapshot.paused ? "Auto-clean: paused" : "Auto-clean: runs by itself every \(snapshot.intervalHours) hours")
+    lines.append(snapshot.paused ? "Auto-clean: paused" : "Auto-clean: runs by itself \(Format.interval(hours: snapshot.intervalHours).lowercased())")
     return lines.joined(separator: "\n")
   }
 

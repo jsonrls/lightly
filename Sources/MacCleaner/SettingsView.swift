@@ -57,19 +57,11 @@ struct SettingsView: View {
         Text("Clean")
         Spacer()
         Picker("Clean", selection: setting(\.intervalHours)) {
-          ForEach(CleanSettings.intervalChoices, id: \.self) { Text(label(hours: $0)).tag($0) }
+          ForEach(CleanSettings.intervalChoices, id: \.self) { Text(Format.interval(hours: $0)).tag($0) }
         }
         .labelsHidden()
         .fixedSize()
       }
-    }
-  }
-
-  private func label(hours: Int) -> String {
-    switch hours {
-    case 1: "Every hour"
-    case 24: "Once a day"
-    default: "Every \(hours) hours"
     }
   }
 

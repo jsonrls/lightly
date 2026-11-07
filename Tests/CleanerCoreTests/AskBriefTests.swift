@@ -87,7 +87,7 @@ struct AskBriefTests {
     #expect(facts.contains("Developer tools: 30.9 GB"))
     #expect(facts.contains("Battery: 100%"))
     #expect(facts.contains("Freed this month: 5.91 GB"))
-    #expect(facts.contains("every 3 hours"))
+    #expect(facts.contains("every hour"))
   }
 
   @Test func factsSayWhatWasNotMeasured() {

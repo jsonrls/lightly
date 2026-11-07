@@ -47,6 +47,11 @@ struct SettingsTests {
     #expect(!s.exists("store/state.corrupt.json"))
   }
 
+  @Test func anIntervalThePickerCannotShowFallsBackToTheDefault() {
+    write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"intervalHours":2}}"#)
+    #expect(Store(directory: s.url("store")).load().settings.intervalHours == CleanSettings().intervalHours)
+  }
+
   @Test func aDamagedIntervalCannotCleanInALoop() {
     var settings = CleanSettings()
     settings.intervalHours = 0
@@ -56,7 +61,7 @@ struct SettingsTests {
   }
 
   @Test func defaultIsEveryThreeHours() {
-    #expect(CleanSettings().interval == 3 * 3600)
+    #expect(CleanSettings().interval == 3600)
     #expect(CleanSettings.intervalChoices == [1, 3, 6, 12, 24])
   }
 

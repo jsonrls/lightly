@@ -15,7 +15,7 @@ public struct CleanSettings: Codable, Sendable, Equatable {
 
   public var openAtLogin = true
   public var useAppleIntelligence = true
-  public var intervalHours = 3
+  public var intervalHours = 1
   public var disabled: Set<CleanCategory> = []
   public var keptFolders: [String] = []
 
@@ -26,7 +26,8 @@ public struct CleanSettings: Codable, Sendable, Equatable {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     openAtLogin = (try? values.decode(Bool.self, forKey: .openAtLogin)) ?? openAtLogin
     useAppleIntelligence = (try? values.decode(Bool.self, forKey: .useAppleIntelligence)) ?? useAppleIntelligence
-    intervalHours = (try? values.decode(Int.self, forKey: .intervalHours)) ?? intervalHours
+    // A value the picker cannot show would leave it blank while cleaning ran on that hidden value.
+    if let hours = try? values.decode(Int.self, forKey: .intervalHours), Self.intervalChoices.contains(hours) { intervalHours = hours }
     disabled = (try? values.decode(Set<CleanCategory>.self, forKey: .disabled)) ?? disabled
     keptFolders = (try? values.decode([String].self, forKey: .keptFolders)) ?? keptFolders
   }
