@@ -27,11 +27,10 @@ struct MacCleanerApp: App {
       PopoverView(model: model)
     } label: {
       let text = Format.menuBarText(freeBytes: model.stats.diskFreeBytes, memoryFraction: model.stats.memoryUsedFraction)
-      HStack {
+      Group {
         if let menuBarIcon { Image(nsImage: menuBarIcon) } else { Image(systemName: "sparkles") }
-        Text(text)
       }
-      .accessibilityLabel("Lightly, \(text)")
+      .accessibilityLabel("Lightly, \(text)")  // the numbers stay for VoiceOver
     }
     .menuBarExtraStyle(.window)
 

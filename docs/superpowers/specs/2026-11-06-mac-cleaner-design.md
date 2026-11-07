@@ -83,7 +83,7 @@ All **(call)**, built to enforce the anti-goals:
 
 Mockups: `.superpowers/brainstorm/80948-1793955094/content/menubar-popover.html` (option B) and `full-window.html`.
 
-**Menu bar item.** Icon plus free space and memory use, for example "212 GB · 61%". No Dock icon. Starts at login.
+**Menu bar item.** The white logo mark only, no numbers. No Dock icon. Starts at login.
 
 **Menu bar window** (opens on click):
 - Four tiles: disk free, memory used, CPU, battery. Disk means the internal disk only.
