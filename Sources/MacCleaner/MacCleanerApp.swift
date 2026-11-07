@@ -46,7 +46,7 @@ struct MacCleanerApp: App {
       SettingsView(model: model)
         .windowFullScreenBehavior(.disabled)
     }
-    .defaultSize(width: 440, height: 680)
-    .windowResizability(.contentMinSize)
+    .defaultSize(width: 400, height: 600)
+    .windowResizability(.contentSize)
   }
 }
