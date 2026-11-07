@@ -25,7 +25,7 @@ Every deletion goes through one gateway, `DeletionGateway`, which refuses anythi
 
 ## Apple Intelligence
 
-On Macs that support it, the on-device model describes each clean in plain words and answers questions such as "What's using my disk?". It only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. Nothing leaves your Mac.
+On Macs that support it, the on-device model describes each clean in plain words and answers questions such as "What's using my disk?". A Scan button finds the biggest items and explains what they probably are. It only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. Nothing leaves your Mac.
 
 ## Build
 

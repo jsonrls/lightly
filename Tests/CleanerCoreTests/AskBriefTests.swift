@@ -43,6 +43,43 @@ struct AskBriefTests {
     #expect(sizes[0].bytes < 100_000)
   }
 
+  // Scanning inside locations
+  @Test func scanFindsTheBiggestItemsInsideEachLocation() {
+    s.file("a/big/x", bytes: 300_000)
+    s.file("a/small/x", bytes: 1000)
+    s.file("b/mid", bytes: 50_000)
+    let scan = DiskUsage.scan([("B", s.url("b")), ("A", s.url("a")), ("gone", s.url("gone"))], limit: 2)
+    #expect(scan.folders.map(\.name) == ["A", "B"])
+    #expect(scan.folders[0].bytes > 300_000)
+    #expect(scan.largest.map(\.name) == ["A: big", "B: mid"])
+  }
+
+  @Test func scanDoesNotFollowLinks() {
+    s.file("Elsewhere/x", bytes: 300_000)
+    s.link("root", to: s.url("Elsewhere"))
+    s.file("inside/x", bytes: 1000)
+    s.link("inside/link", to: s.url("Elsewhere"))
+    let scan = DiskUsage.scan([("root", s.url("root")), ("inside", s.url("inside"))], limit: 5)
+    #expect(scan.folders.map(\.name) == ["inside"])
+    #expect(scan.largest.map(\.name) == ["inside: x"])
+  }
+
+  @Test func factsListTheLargestItems() {
+    var snap = snapshot(folders: folders)
+    snap.largest = [FolderSize(name: "Developer tools: CoreSimulator", bytes: 20_000_000_000)]
+    #expect(AskBrief.facts(snap).contains("Developer tools: CoreSimulator: 20 GB"))
+    #expect(AskBrief.fallback(snap).contains("Developer tools: CoreSimulator 20 GB"))
+  }
+
+  @Test func aScanAnswerMustRankTheTopThreeInOrder() {
+    var snap = snapshot()
+    snap.largest = [FolderSize(name: "Developer tools: Xcode", bytes: 3), FolderSize(name: "App data: Claude", bytes: 2),
+                    FolderSize(name: "Developer tools: CoreSimulator", bytes: 1), FolderSize(name: "Applications: Xcode.app", bytes: 0)]
+    #expect(AskBrief.ranksCorrectly("Xcode first, then Claude, then CoreSimulator.", snap))
+    #expect(!AskBrief.ranksCorrectly("Xcode first, then Claude, then Xcode.app.", snap))
+    #expect(!AskBrief.ranksCorrectly("Claude first, then Xcode, then CoreSimulator.", snap))
+  }
+
   // Facts
   @Test func factsCarryTheMeasuredNumbers() {
     let facts = AskBrief.facts(snapshot(folders: folders))

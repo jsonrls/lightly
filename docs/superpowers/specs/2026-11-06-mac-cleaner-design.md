@@ -98,7 +98,7 @@ Mockups: `.superpowers/brainstorm/80948-1793955094/content/menubar-popover.html`
 - The same four stats as rings, larger than in the menu bar window. No history graphs: the owner removed them.
 - Left panel: last clean, by category.
 - Right panel: cleaning history, newest first, five runs per page, with a monthly total. The window's height fits its content; only its width can be resized.
-- An ask box for questions such as "What's using my disk?". Apple Intelligence rewords measured facts on device. It has no tools, and any answer with an unmeasured figure or delete advice is replaced by the measured facts.
+- An ask box for questions such as "What's using my disk?". Apple Intelligence rewords measured facts on device. It has no tools, and any answer with an unmeasured figure or delete advice is replaced by the measured facts. A Scan button finds the biggest items inside each location, in code, and the model says what they probably are. The answer must rank the top three correctly. Scanning only reads: the model never chooses what is deleted.
 - "Clean now" and "Pause auto-clean" buttons.
 
 **(call)** Smaller points:

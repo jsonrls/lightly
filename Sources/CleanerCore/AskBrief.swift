@@ -36,6 +36,21 @@ public enum DiskUsage {
     }
     .sorted { $0.bytes > $1.bytes }
   }
+
+  /// Sizes each location from what is inside it, so one walk also finds the biggest items. Read-only.
+  public static func scan(_ folders: [(name: String, url: URL)], limit: Int = 12) -> (folders: [FolderSize], largest: [FolderSize]) {
+    var totals: [FolderSize] = []
+    var items: [FolderSize] = []
+    for folder in folders {
+      let isLink = (try? folder.url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink
+      guard isLink == false,
+            let children = try? FileManager.default.contentsOfDirectory(at: folder.url, includingPropertiesForKeys: nil) else { continue }
+      let inside = measure(children.map { (name: "\(folder.name): \($0.lastPathComponent)", url: $0) })
+      totals.append(FolderSize(name: folder.name, bytes: inside.reduce(0) { $0 + $1.bytes }))
+      items += inside
+    }
+    return (totals.sorted { $0.bytes > $1.bytes }, Array(items.sorted { $0.bytes > $1.bytes }.prefix(limit)))
+  }
 }
 
 /// What the on-device model is told when asked a question, and the check on its answer.
@@ -49,9 +64,11 @@ public enum AskBrief {
     let paused: Bool
     let fullAccess: Bool
     let intervalHours: Int
+    var largest: [FolderSize]
 
-    public init(stats: StatsSnapshot, folders: [FolderSize], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool, intervalHours: Int = 3) {
+    public init(stats: StatsSnapshot, folders: [FolderSize], largest: [FolderSize] = [], lastClean: String?, monthFreed: Int64, paused: Bool, fullAccess: Bool, intervalHours: Int = 3) {
       self.intervalHours = intervalHours
+      self.largest = largest
       self.stats = stats
       self.folders = folders
       self.lastClean = lastClean
@@ -72,6 +89,8 @@ public enum AskBrief {
     if let battery = stats.batteryFraction { lines.append("Battery: \(Format.percent(battery))") }
     if !snapshot.folders.isEmpty { lines.append("Largest folders, biggest first:") }
     lines += snapshot.folders.map { "\($0.name): \(Format.bytes($0.bytes))" }
+    if !snapshot.largest.isEmpty { lines.append("Largest items inside those folders, biggest first:") }
+    lines += snapshot.largest.map { "\($0.name): \(Format.bytes($0.bytes))" }
     if !snapshot.fullAccess { lines.append("Not measured: Documents, Desktop, Downloads, Movies, Music, Pictures, Trash") }
     if let lastClean = snapshot.lastClean { lines.append("Last clean: \(lastClean)") }
     lines.append("Freed this month: \(Format.bytes(snapshot.monthFreed))")
@@ -86,9 +105,21 @@ public enum AskBrief {
       && answer.firstMatch(of: /(?i)\b(delete|deleting|remove|removing|erase|erasing|uninstall|uninstalling|wipe|wiping|empty|emptying)\b/) == nil
   }
 
+  /// A scan answer must name the three largest items in order: the model states real figures but ranks them badly.
+  public static func ranksCorrectly(_ answer: String, _ snapshot: Snapshot) -> Bool {
+    var rest = Substring(answer)
+    for item in snapshot.largest.prefix(3) {
+      let name = item.name.components(separatedBy: ": ").last ?? item.name
+      guard let found = rest.range(of: name, options: .caseInsensitive) else { return false }
+      rest = rest[found.upperBound...]
+    }
+    return true
+  }
+
   public static func fallback(_ snapshot: Snapshot) -> String {
     let free = "Your disk has \(Format.bytes(snapshot.stats.diskFreeBytes)) free."
-    let biggest = snapshot.folders.prefix(3).map { "\($0.name) \(Format.bytes($0.bytes))" }.joined(separator: ", ")
-    return biggest.isEmpty ? free : "\(free) The biggest folders I measured: \(biggest)."
+    let items = snapshot.largest.isEmpty ? snapshot.folders : snapshot.largest
+    let biggest = items.prefix(3).map { "\($0.name) \(Format.bytes($0.bytes))" }.joined(separator: ", ")
+    return biggest.isEmpty ? free : "\(free) The biggest things I measured: \(biggest)."
   }
 }
