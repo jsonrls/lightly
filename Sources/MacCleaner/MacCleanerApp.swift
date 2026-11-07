@@ -4,6 +4,7 @@ import CleanerCore
 @main
 struct MacCleanerApp: App {
   @State private var model: AppModel
+  @State private var ask = AskModel()  // here, so a chat survives closing the window
 
   /// A template image: macOS shows it white on a dark menu bar and dark on a light one.
   private let menuBarIcon: NSImage? = {
@@ -35,7 +36,7 @@ struct MacCleanerApp: App {
     .menuBarExtraStyle(.window)
 
     Window("Lightly", id: "full") {
-      FullView(model: model)
+      FullView(model: model, ask: ask)
         .windowFullScreenBehavior(.disabled)
     }
     .defaultSize(width: 760, height: 480)
