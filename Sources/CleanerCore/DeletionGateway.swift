@@ -16,7 +16,10 @@ public final class DeletionGateway: @unchecked Sendable {
         return values?.volumeIsInternal == true ? values?.volume : nil
       },
       remove: { try DeletionGateway.removeTree($0) },
-      trash: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
+      trash: {
+        try DeletionGateway.moveToTrash($0, trash: CleanEnvironment.userHome.appending(path: ".Trash"),
+                                        fallback: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
+      })
   }
 
   private let allowedRoots: [URL]
@@ -44,11 +47,7 @@ public final class DeletionGateway: @unchecked Sendable {
   /// `validate` fails the open instead of redirecting the delete. A link inside the tree is removed, not followed.
   /// `device` is for tests; by default the target's own volume is the only one touched.
   static func removeTree(_ url: URL, device: dev_t? = nil) throws {
-    // O_NOFOLLOW_ANY: a link anywhere in the parent's path fails the open.
-    let parent = url.deletingLastPathComponent().withUnsafeFileSystemRepresentation { path in
-      path.map { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY) } ?? -1
-    }
-    guard parent >= 0 else { throw posixError() }
+    let parent = try openFolder(url.deletingLastPathComponent())
     defer { close(parent) }
     var info = stat()
     let name = url.lastPathComponent
@@ -60,15 +59,22 @@ public final class DeletionGateway: @unchecked Sendable {
   /// write bit. An unreadable folder still means keep, and another volume is never touched.
   private static func removeEntry(_ name: String, in dir: Int32, device: dev_t) throws {
     var info = stat()
-    guard fstatat(dir, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw posixError() }
+    // Gone already, for example a cache its tool rewrote mid-run: nothing left to delete.
+    guard fstatat(dir, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+      if errno == ENOENT { return }
+      throw posixError()
+    }
     guard info.st_mode & S_IFMT == S_IFDIR else {
-      guard unlinkat(dir, name, 0) == 0 else { throw posixError() }
+      guard unlinkat(dir, name, 0) == 0 || errno == ENOENT else { throw posixError() }
       return
     }
     guard info.st_dev == device else { throw POSIXError(.EXDEV) }
     let fd = openat(dir, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard fd >= 0 else { throw posixError() }
     defer { close(fd) }
+    // The folder opened must be the one checked above, not one renamed or mounted into its place since.
+    var opened = stat()
+    guard fstat(fd, &opened) == 0, opened.st_dev == info.st_dev, opened.st_ino == info.st_ino else { throw POSIXError(.EAGAIN) }
     if info.st_mode & S_IWUSR == 0 {
       guard info.st_mode & 0o500 == 0o500 else { throw POSIXError(.EACCES) }
       fchmod(fd, info.st_mode & 0o7777 | S_IWUSR)
@@ -78,7 +84,11 @@ public final class DeletionGateway: @unchecked Sendable {
   }
 
   private static func names(in fd: Int32) throws -> [String] {
-    guard let dir = fdopendir(dup(fd)) else { throw posixError() }
+    let copy = dup(fd)
+    guard copy >= 0, let dir = fdopendir(copy) else {
+      if copy >= 0 { close(copy) }
+      throw posixError()
+    }
     defer { closedir(dir) }
     var names: [String] = []
     while let entry = readdir(dir) {
@@ -86,6 +96,36 @@ public final class DeletionGateway: @unchecked Sendable {
       if name != "." && name != ".." { names.append(name) }
     }
     return names
+  }
+
+  /// Moves the item into `trash` through folder descriptors, for the same reason as `removeTree`.
+  /// Finder's "Put Back" does not know these items: the price of never following a swapped-in link.
+  /// `fallback` runs when the Trash cannot be opened: missing, or unreadable without Full Disk Access.
+  /// Without that grant this app can reach nothing another app of this user cannot, so the path race grants nothing.
+  static func moveToTrash(_ url: URL, trash: URL, fallback: (URL) throws -> Void) throws {
+    let parent = try openFolder(url.deletingLastPathComponent())
+    defer { close(parent) }
+    let bin: Int32
+    do { bin = try openFolder(trash) } catch let error as POSIXError where [.ENOENT, .EACCES, .EPERM].contains(error.code) {
+      return try fallback(url)
+    }
+    defer { close(bin) }
+    let name = url.lastPathComponent
+    for n in 1...1000 {
+      // RENAME_EXCL: never replaces an item already in the Trash.
+      if renameatx_np(parent, name, bin, n == 1 ? name : "\(name) \(n)", UInt32(RENAME_EXCL)) == 0 { return }
+      guard errno == EEXIST else { throw posixError() }
+    }
+    throw POSIXError(.EEXIST)
+  }
+
+  /// O_NOFOLLOW_ANY: a link anywhere in the path fails the open.
+  private static func openFolder(_ url: URL) throws -> Int32 {
+    let fd = url.withUnsafeFileSystemRepresentation { path in
+      path.map { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY) } ?? -1
+    }
+    guard fd >= 0 else { throw posixError() }
+    return fd
   }
 
   private static func posixError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }

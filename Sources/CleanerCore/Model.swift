@@ -31,7 +31,8 @@ public struct CleanResult: Codable, Sendable, Equatable {
       bytesFreed += try op(url)
     } catch DeletionGateway.Refusal.symlink, DeletionGateway.Refusal.notOnBootVolume, DeletionGateway.Refusal.kept {
     } catch {
-      errors.append(label.map { "\($0): could not be deleted" } ?? "\(url.lastPathComponent): \(error.localizedDescription)")
+      errors.append(label.map { "\($0): could not be deleted (error \((error as NSError).code))" }
+        ?? "\(url.lastPathComponent): \(error.localizedDescription)")
     }
   }
 }

@@ -130,6 +130,52 @@ struct DeletionGatewayTests {
     #expect(s.exists("Protected/V10/x"))
   }
 
+  @Test func trashMovesTheItemUnderAFreeName() throws {
+    s.file("Caches/a/x")
+    s.file("Trash/a")
+    try DeletionGateway.moveToTrash(s.url("Caches/a"), trash: s.url("Trash"), fallback: { _ in throw CocoaError(.fileWriteNoPermission) })
+    #expect(!s.exists("Caches/a"))
+    #expect(s.exists("Trash/a 2/x") && s.exists("Trash/a"))
+  }
+
+  // Without Full Disk Access the Trash cannot be opened; trashItem still works there and grants nothing extra.
+  @Test func trashFallsBackWhenTheTrashCannotBeOpened() throws {
+    s.file("Caches/a/x")
+    let s = s
+    try DeletionGateway.moveToTrash(s.url("Caches/a"), trash: s.url("missing-trash"), fallback: { url in
+      try FileManager.default.moveItem(at: url, to: s.url("fallback-trash"))
+    })
+    #expect(s.exists("fallback-trash/x") && !s.exists("Caches/a"))
+  }
+
+  @Test func trashFallsBackWhenTheTrashIsUnreadable() throws {
+    s.file("Caches/a/x")
+    s.dir("Trash")
+    chmod(s.url("Trash").path(percentEncoded: false), 0o000)
+    defer { chmod(s.url("Trash").path(percentEncoded: false), 0o755) }
+    let s = s
+    try DeletionGateway.moveToTrash(s.url("Caches/a"), trash: s.url("Trash"), fallback: { url in
+      try FileManager.default.moveItem(at: url, to: s.url("fallback-trash"))
+    })
+    #expect(s.exists("fallback-trash/x"))
+  }
+
+  @Test func trashParentSwappedForALinkIsNotFollowed() {
+    s.file("Protected/V10/x")
+    s.dir("Logs/V10")
+    s.dir("Trash")
+    var hooks = s.hooks
+    let s = s
+    hooks.trash = { url in
+      try FileManager.default.moveItem(at: s.url("Logs"), to: s.url("old"))
+      s.link("Logs", to: s.url("Protected"))
+      try DeletionGateway.moveToTrash(url, trash: s.url("Trash"), fallback: { _ in throw CocoaError(.fileWriteNoPermission) })
+    }
+    let g = s.gateway(roots: ["Logs"], denied: ["Protected"], hooks: hooks)
+    #expect(throws: (any Error).self) { try g.trash(s.url("Logs/V10")) }
+    #expect(s.exists("Protected/V10/x"))
+  }
+
   @Test func dryRunAndRefusalLeaveModesAlone() throws {
     var hooks = s.hooks
     hooks.remove = DeletionGateway.Hooks.live.remove

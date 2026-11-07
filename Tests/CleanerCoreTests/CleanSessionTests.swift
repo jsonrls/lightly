@@ -2,11 +2,6 @@ import Foundation
 import Testing
 @testable import CleanerCore
 
-/// `DockerRule` candidates are real paths, so Docker tests need one to exist. `FakeRunner` still intercepts every call.
-private let hasDockerBinary = DockerRule.defaultCandidates.contains {
-  FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false))
-}
-
 struct CleanSessionTests {
   let s = Sandbox()
   let now = Date()
@@ -364,7 +359,7 @@ struct CleanSessionTests {
 
   // MARK: Docker (FakeRunner only; no real Docker runs)
 
-  static let prunes = [["info"], ["builder", "prune", "-f"], ["image", "prune", "-f"]]
+  static let prunes = ["/info", "/build/prune", "/images/prune"]
 
   func dockerSettings(dataFolder: URL) throws {
     let dir = s.dir("Library/Group Containers/group.com.docker")
@@ -372,32 +367,33 @@ struct CleanSessionTests {
     try json.write(to: dir.appending(path: "settings-store.json"))
   }
 
-  func dockerCalls(hooks: DeletionGateway.Hooks? = nil, mode: DeletionGateway.Mode = .live) -> [[String]] {
+  func dockerCalls(hooks: DeletionGateway.Hooks? = nil, mode: DeletionGateway.Mode = .live) -> [String] {
+    s.file(".docker/run/docker.sock")
     var state = AppState()
     _ = CleanSession.run(env: env(mode: mode, hooks: hooks), state: &state, now: now, manual: true)
     return runner.calls
   }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerPrunesInLiveMode() { #expect(dockerCalls() == Self.prunes) }
+  @Test func dockerPrunesInLiveMode() { #expect(dockerCalls() == Self.prunes) }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerFollowsDryRun() { #expect(dockerCalls(mode: .dryRun).isEmpty) }
+  @Test func dockerFollowsDryRun() { #expect(dockerCalls(mode: .dryRun).isEmpty) }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerDataFolderOnBootVolumePrunes() throws {
+  @Test func dockerDataFolderOnBootVolumePrunes() throws {
     try dockerSettings(dataFolder: s.dir("docker-data"))
     #expect(dockerCalls() == Self.prunes)
   }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerDataFolderOnOtherVolumeSkips() throws {
+  @Test func dockerDataFolderOnOtherVolumeSkips() throws {
     try dockerSettings(dataFolder: s.dir("docker-data"))
     var hooks = s.hooks
     hooks.volumeOf = { url in
       URL(filePath: url.path(percentEncoded: false).contains("docker-data") ? "/Volumes/json SSD" : "/")
     }
-    #expect(dockerCalls(hooks: hooks) == [["info"]])
+    #expect(dockerCalls(hooks: hooks) == ["/info"])
   }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerDataFolderThatDoesNotResolveSkips() throws {
+  @Test func dockerDataFolderThatDoesNotResolveSkips() throws {
     try dockerSettings(dataFolder: s.url("missing"))  // s.hooks says "/" for any path, so only the resolve check can stop it
-    #expect(dockerCalls() == [["info"]])
+    #expect(dockerCalls() == ["/info"])
   }
 }

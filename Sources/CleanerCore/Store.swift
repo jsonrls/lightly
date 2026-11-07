@@ -83,6 +83,18 @@ public struct Store: Sendable {
     return .open(fd)
   }
 
+  /// False when the folder exists but is refused (a link, another owner, an open error). Then `load()` could
+  /// not read the real state, and saving the paused defaults over it would lose the owner's settings.
+  public var isUsable: Bool {
+    switch folder() {
+    case .missing: return true
+    case .unsafe: return false
+    case .open(let fd):
+      close(fd)
+      return true
+    }
+  }
+
   /// Missing file is a fresh install. A file that exists but cannot be read or decoded is moved to
   /// state.corrupt.json and the app starts paused, so a lost pause never turns into a surprise clean.
   /// An unsafe folder is left untouched and also starts paused.
@@ -129,7 +141,10 @@ public struct Store: Sendable {
     let fd = openat(dir, temp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
     guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     do {
-      try FileHandle(fileDescriptor: fd, closeOnDealloc: true).write(contentsOf: data)
+      let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+      try handle.write(contentsOf: data)
+      // On disk before the rename, so a power loss leaves the old file rather than an empty new one.
+      _ = fcntl(fd, F_FULLFSYNC)
       guard renameat(dir, temp, dir, name) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     } catch {
       unlinkat(dir, temp, 0)

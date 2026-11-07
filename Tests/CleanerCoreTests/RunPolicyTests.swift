@@ -35,7 +35,7 @@ struct RunPolicyTests {
     #expect(RunPolicy.mode(arguments: ["/x", "--dry-run-reprot"], environment: [:], bundleLive: false) == .dryRun)
   }
 
-  // MARK: first-launch stamp
+  // MARK: dry-run list
 
   // dry-run.txt sits where any process can read it; Trash names are readable only with Full Disk Access.
   @Test func dryRunListCountsTrashEntriesWithoutNames() {
@@ -46,6 +46,8 @@ struct RunPolicyTests {
     #expect(text.contains("/Users/u/.Trash: 2 items"))
     #expect(!text.contains("secret-name"))
   }
+
+  // MARK: first-launch stamp
 
   @Test func firstLaunchStampsNow() {
     var s = AppState()

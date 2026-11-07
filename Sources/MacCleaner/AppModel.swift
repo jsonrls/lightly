@@ -56,6 +56,7 @@ func runDryRunReport() -> Never {
   var isCleaning = false
   var trashAccess: Bool
   private(set) var unsaved = false  // the last save failed; retried on each schedule check
+  private var readOnly = false  // the state folder was refused at launch
   private(set) var dryRunRecord: RunRecord?
   var lastRecord: RunRecord? { dryRunRecord ?? state.history.last }
   private var explained: (date: Date, insight: CleanInsight)?
@@ -84,7 +85,11 @@ func runDryRunReport() -> Never {
 
   func start() {
     let store = Store(directory: storeDirectory)
+    // A refused folder means the real state was not read: saving defaults over it would lose the kept list.
+    // Checked on both sides of the load: a refusal during it would otherwise return defaults that a later save writes back.
+    let usableBefore = store.isUsable
     state = mode == .live ? store.load() : store.peek()
+    readOnly = !usableBefore || !store.isUsable
     if RunPolicy.stampFirstLaunch(&state, now: Date()) { save() }
     Task {
       while !Task.isCancelled {
@@ -146,6 +151,11 @@ func runDryRunReport() -> Never {
   /// or its `lastScheduledRun` stamp would make the first live launch clean at once.
   private func save() {
     guard mode == .live else { return }
+    // Unsaved also blocks scheduled runs, so a refused state folder never cleans.
+    guard !readOnly else {
+      unsaved = true
+      return
+    }
     do {
       try Store(directory: storeDirectory).save(state)
       unsaved = false

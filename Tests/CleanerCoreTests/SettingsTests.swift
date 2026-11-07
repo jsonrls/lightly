@@ -60,6 +60,11 @@ struct SettingsTests {
     #expect(s.exists("store/state.corrupt.json"))
   }
 
+  @Test func aDamagedDisabledListPauses() {
+    write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"disabled":"trash"}}"#)
+    #expect(Store(directory: s.url("store")).load().paused)
+  }
+
   @Test func anIntervalThePickerCannotShowFallsBackToTheDefault() {
     write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"intervalHours":2}}"#)
     #expect(Store(directory: s.url("store")).load().settings.intervalHours == CleanSettings().intervalHours)

@@ -5,13 +5,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-flags=()
-if [ "${1:-}" = "--live" ]; then flags=(-Xswiftc -DMACCLEANER_LIVE); fi
-swift build -c release ${flags[@]+"${flags[@]}"}  # macOS bash 3.2 calls an empty array unbound
+# Separate build folders, so a dry-run build can never reuse objects compiled live.
+build=(-c release --scratch-path .build/dry)
+if [ "${1:-}" = "--live" ]; then build=(-c release --scratch-path .build/live -Xswiftc -DMACCLEANER_LIVE); fi
+swift build "${build[@]}"
 
 app="dist/Lightly.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$(swift build -c release --show-bin-path)/MacCleaner" "$app/Contents/MacOS/MacCleaner"
+cp "$(swift build "${build[@]}" --show-bin-path)/MacCleaner" "$app/Contents/MacOS/MacCleaner"
 cp Resources/AppIcon.icns Resources/MenuBarIcon.svg "$app/Contents/Resources/"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 
