@@ -7,12 +7,12 @@
 
 A native macOS menu bar app that cleans junk by itself. There is nothing to press.
 
-It lives in the menu bar as a small white logo and, by default, runs every 3 hours, day and night, or at the next wake if the Mac was asleep.
+It lives in the menu bar as a small white logo and, by default, runs every hour, day and night, or at the next wake if the Mac was asleep.
 
 ## What you see
 
-- **Menu bar window:** click the logo for disk, memory, CPU and battery as rings, the last clean with a summary of this month's cleaning, and a "Clean now" button. The bottom row has an "Open full view" link, the gear icon and a red quit button.
-- **Full view:** larger rings, the last clean by category, a paged cleaning history, and Dusty, a chat assistant powered by Apple Intelligence.
+- **Menu bar window:** click the logo for disk, memory, CPU and battery as rings, and the last clean with a summary of this month's cleaning. A "Clean now" button appears only when "Clean automatically" is off. The bottom row has an "Open full view" link, the gear icon and a red quit button.
+- **Full view:** larger rings, the last clean by category, a paged cleaning history, Dusty, a chat assistant powered by Apple Intelligence, and "Clean now" for when you want space right away. It also cleans the weekly developer caches.
 - **Settings:** the gear icon opens them.
 
 ## What it cleans
@@ -39,7 +39,7 @@ Every deletion goes through one gateway, `DeletionGateway`, which refuses anythi
 
 - Open at login
 - Use Apple Intelligence
-- Clean automatically, and how often: every hour, 3, 6 or 12 hours, or once a day
+- Clean automatically, and how often: every hour (the default), 3, 6 or 12 hours, or once a day
 - What to clean: a switch for each category
 - Always kept: files and folders that are never cleaned
 - Full Disk Access status
@@ -81,7 +81,7 @@ Only `scripts/bundle.sh --live` makes a build that really deletes.
 2. Copy `dist/Lightly.app` to `/Applications` and launch it from there, because the login item stays tied to where the app first ran.
 3. Turn on Full Disk Access in System Settings so the Trash can be cleaned.
 
-The first automatic clean waits 3 hours after the first launch.
+The first automatic clean waits one full interval after the first launch, an hour by default.
 
 ## Design
 
