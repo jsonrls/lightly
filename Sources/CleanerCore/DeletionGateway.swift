@@ -3,7 +3,7 @@ import Foundation
 /// The only path to file deletion in the app. Everything it refuses stays on disk.
 public final class DeletionGateway: @unchecked Sendable {
   public enum Mode: Sendable { case live, dryRun }
-  public enum Refusal: Error, Equatable { case symlink, outsideAllowedRoots, denied, notOnBootVolume }
+  public enum Refusal: Error, Equatable { case symlink, outsideAllowedRoots, denied, kept, notOnBootVolume }
 
   public struct Hooks: Sendable {
     public var volumeOf: @Sendable (URL) -> URL?  // nil = unknown or not internal
@@ -21,15 +21,17 @@ public final class DeletionGateway: @unchecked Sendable {
 
   private let allowedRoots: [URL]
   private let deniedRoots: [URL]
+  private let keptRoots: [URL]
   private let bootVolume: URL
   private let mode: Mode
   private let hooks: Hooks
   private let lock = NSLock()
   private var touchedURLs: [URL] = []
 
-  public init(allowedRoots: [URL], deniedRoots: [URL], bootVolume: URL, mode: Mode, hooks: Hooks = .live) {
+  public init(allowedRoots: [URL], deniedRoots: [URL], keptRoots: [URL] = [], bootVolume: URL, mode: Mode, hooks: Hooks = .live) {
     self.allowedRoots = allowedRoots
     self.deniedRoots = deniedRoots
+    self.keptRoots = keptRoots
     self.bootVolume = bootVolume
     self.mode = mode
     self.hooks = hooks
@@ -85,6 +87,12 @@ public final class DeletionGateway: @unchecked Sendable {
     // An ancestor counts too: deleting it would take the denied root with it.
     if denied.contains(where: { path == $0 || Self.isInside(path, $0) || Self.isInside($0, path) }) {
       throw Refusal.denied
+    }
+
+    // The owner's own list, so a refusal here is a choice, not a problem. If a kept path cannot be resolved, compare it as written.
+    let kept = keptRoots.map { Self.realPath($0) ?? $0.path(percentEncoded: false) }
+    if kept.contains(where: { path == $0 || Self.isInside(path, $0) || Self.isInside($0, path) }) {
+      throw Refusal.kept
     }
   }
 

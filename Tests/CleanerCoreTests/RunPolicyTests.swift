@@ -53,7 +53,7 @@ struct RunPolicyTests {
   @Test func firstLaunchDoesNotRun() {
     var s = AppState()
     _ = RunPolicy.stampFirstLaunch(&s, now: at(12))
-    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12), calendar: cal).shouldRun)
+    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12)).shouldRun)
   }
 
   // MARK: schedule check
@@ -66,26 +66,26 @@ struct RunPolicyTests {
 
   @Test func dueRunGoes() {
     var s = dueState()
-    let check = RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12), calendar: cal)
+    let check = RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12))
     #expect(check.shouldRun && !check.restamped)
     #expect(s == dueState())
   }
 
   @Test func unsavedStateSkipsDueRun() {
     var s = dueState()
-    #expect(!RunPolicy.scheduleCheck(&s, unsaved: true, now: at(12), calendar: cal).shouldRun)
+    #expect(!RunPolicy.scheduleCheck(&s, unsaved: true, now: at(12)).shouldRun)
   }
 
   @Test func pausedSkipsDueRun() {
     var s = dueState()
     s.paused = true
-    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12), calendar: cal).shouldRun)
+    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12)).shouldRun)
   }
 
   @Test func clockBackRestampsAndDoesNotRun() {
     var s = AppState()
     s.lastScheduledRun = at(12, day: 8)
-    let check = RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12), calendar: cal)
+    let check = RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12))
     #expect(check.restamped && !check.shouldRun)
     #expect(s.lastScheduledRun == at(12))
   }
@@ -93,7 +93,7 @@ struct RunPolicyTests {
   @Test func clockBackStillRestampsWhileUnsaved() {
     var s = AppState()
     s.lastScheduledRun = at(12, day: 8)
-    #expect(RunPolicy.scheduleCheck(&s, unsaved: true, now: at(12), calendar: cal).restamped)
+    #expect(RunPolicy.scheduleCheck(&s, unsaved: true, now: at(12)).restamped)
   }
 
   // MARK: pause
@@ -104,7 +104,7 @@ struct RunPolicyTests {
     RunPolicy.togglePause(&s, now: at(12))
     #expect(!s.paused)
     #expect(s.lastScheduledRun == at(12))
-    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12), calendar: cal).shouldRun)
+    #expect(!RunPolicy.scheduleCheck(&s, unsaved: false, now: at(12)).shouldRun)
   }
 
   @Test func pausingKeepsStamp() {

@@ -11,9 +11,13 @@ struct CleanInsight {
   @Guide(description: "If an Error line is given, one friendly sentence saying the folder named before the colon in the Error line could not be removed this time and will be tried again later. Do not quote the error. If there is no Error line, leave this empty.")
   var problem: String
 
+  static var isModelAvailable: Bool {
+    if case .available = SystemLanguageModel.default.availability { true } else { false }
+  }
+
   /// nil when this Mac has no usable model, so the window shows nothing extra.
   static func explain(_ record: RunRecord) async -> CleanInsight? {
-    guard case .available = SystemLanguageModel.default.availability else { return nil }
+    guard isModelAvailable else { return nil }
     let session = LanguageModelSession(
       instructions: "You describe a finished disk cleanup to a non-technical person. Use only the names and figures given, exactly as written. Never suggest deleting anything.")
     do {

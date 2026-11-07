@@ -30,7 +30,7 @@ struct PopoverView: View {
       Image(systemName: "sparkles").foregroundStyle(.tint)
       Text("Mac Cleaner").font(.headline)
       Spacer()
-      gearMenu
+      settingsButton
       Button { NSApplication.shared.terminate(nil) } label: {
         Image(systemName: "power").frame(width: 30, height: 30).contentShape(.circle)
       }
@@ -133,7 +133,7 @@ struct PopoverView: View {
       }
       .buttonStyle(.glassProminent)
       .disabled(model.isCleaning)
-      Button(action: openFullView) {
+      Button { open("full") } label: {
         Label("Open full view", systemImage: "macwindow").frame(maxWidth: .infinity)
       }
       .buttonStyle(.glass)
@@ -142,24 +142,20 @@ struct PopoverView: View {
     .controlSize(.large)
   }
 
-  private func openFullView() {
-    openWindow(id: "full")
+  private func open(_ id: String) {
+    openWindow(id: id)
     NSApp.activate()  // an LSUIElement app is never frontmost on its own
     dismiss()
     window?.close()  // shortcut: dismiss alone could not be proven on a menu bar window, drop this once it is
   }
 
-  private var gearMenu: some View {
-    Menu {
-      Button(model.state.paused ? "Resume auto-clean" : "Pause auto-clean") { model.togglePause() }
-    } label: {
-      Image(systemName: "gearshape")
+  private var settingsButton: some View {
+    Button { open("settings") } label: {
+      Image(systemName: "gearshape").frame(width: 30, height: 30).contentShape(.circle)
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .frame(width: 30, height: 30)
+    .buttonStyle(.plain)
     .glassEffect(.regular.interactive(), in: .circle)
+    .help("Settings")
     .accessibilityLabel("Settings")
   }
 }

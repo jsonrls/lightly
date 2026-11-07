@@ -9,6 +9,32 @@ public struct DiskSample: Codable, Sendable, Equatable {
   }
 }
 
+/// What the owner chose in the settings window.
+public struct CleanSettings: Codable, Sendable, Equatable {
+  public static let intervalChoices = [1, 3, 6, 12, 24]
+
+  public var openAtLogin = true
+  public var useAppleIntelligence = true
+  public var intervalHours = 3
+  public var disabled: Set<CleanCategory> = []
+  public var keptFolders: [String] = []
+
+  public init() {}
+
+  /// Field by field, so one missing or unknown value falls back to its default instead of failing the whole state.
+  public init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    openAtLogin = (try? values.decode(Bool.self, forKey: .openAtLogin)) ?? openAtLogin
+    useAppleIntelligence = (try? values.decode(Bool.self, forKey: .useAppleIntelligence)) ?? useAppleIntelligence
+    intervalHours = (try? values.decode(Int.self, forKey: .intervalHours)) ?? intervalHours
+    disabled = (try? values.decode(Set<CleanCategory>.self, forKey: .disabled)) ?? disabled
+    keptFolders = (try? values.decode([String].self, forKey: .keptFolders)) ?? keptFolders
+  }
+
+  /// Never under an hour, so a damaged value cannot clean in a loop.
+  public var interval: TimeInterval { TimeInterval(max(1, intervalHours)) * 3600 }
+}
+
 public struct AppState: Codable, Sendable, Equatable {
   public var history: [RunRecord] = []
   public var inventory = AppInventory()
@@ -16,7 +42,14 @@ public struct AppState: Codable, Sendable, Equatable {
   public var paused = false
   public var lastScheduledRun: Date?
   public var lastWeeklyRun: Date?
+  // Optional: a required key would make every state.json written before settings existed read as corrupt.
+  var storedSettings: CleanSettings?
   public init() {}
+
+  public var settings: CleanSettings {
+    get { storedSettings ?? CleanSettings() }
+    set { storedSettings = newValue }
+  }
 
   public mutating func prune(now: Date) {
     history.removeAll { $0.date < now - 365 * Limits.day }

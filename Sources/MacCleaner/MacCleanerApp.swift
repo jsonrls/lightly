@@ -32,5 +32,12 @@ struct MacCleanerApp: App {
     }
     .defaultSize(width: 760, height: 480)
     .windowResizability(.contentSize)
+
+    Window("Mac Cleaner Settings", id: "settings") {
+      SettingsView(model: model)
+        .windowFullScreenBehavior(.disabled)
+    }
+    .defaultSize(width: 440, height: 680)
+    .windowResizability(.contentMinSize)
   }
 }

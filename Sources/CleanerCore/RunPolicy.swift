@@ -19,13 +19,13 @@ public enum RunPolicy {
 
   /// Restamps after the clock moved back, then says whether a scheduled run is due.
   /// `unsaved` blocks the run: its record could be lost, along with any pause waiting to be written.
-  public static func scheduleCheck(_ state: inout AppState, unsaved: Bool, now: Date, calendar: Calendar) -> (restamped: Bool, shouldRun: Bool) {
+  public static func scheduleCheck(_ state: inout AppState, unsaved: Bool, now: Date) -> (restamped: Bool, shouldRun: Bool) {
     var restamped = false
     if let last = state.lastScheduledRun, last > now {
       state.lastScheduledRun = now
       restamped = true
     }
-    let due = Scheduler.shouldRun(now: now, lastRun: state.lastScheduledRun, paused: state.paused, calendar: calendar)
+    let due = Scheduler.shouldRun(now: now, lastRun: state.lastScheduledRun, paused: state.paused, interval: state.settings.interval)
     return (restamped, !unsaved && due)
   }
 
@@ -40,6 +40,7 @@ public enum RunPolicy {
   public static func merge(run: AppState, current: AppState, now: Date) -> AppState {
     var merged = run
     merged.paused = current.paused
+    merged.storedSettings = current.storedSettings
     merged.diskSamples = current.diskSamples
     merged.lastScheduledRun = [run.lastScheduledRun, current.lastScheduledRun].compactMap { $0 }.max()
     merged.prune(now: now)

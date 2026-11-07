@@ -2,7 +2,7 @@
 
 A native macOS menu bar app that cleans junk by itself and shows disk, memory, CPU and battery at a glance.
 
-It runs once a day at 03:00, or at the next wake if the Mac was asleep. There is nothing to press.
+It runs every 3 hours, day and night, or at the next wake if the Mac was asleep. There is nothing to press. The gear icon opens Settings, where you can change how often it runs, switch off what it cleans, and add folders to an "Always kept" list.
 
 ## What it cleans
 
@@ -25,7 +25,7 @@ Every deletion goes through one gateway, `DeletionGateway`, which refuses anythi
 
 ## Apple Intelligence
 
-On Macs that support it, the on-device model describes each clean in plain words and answers questions such as "What's using my disk?". It only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. Nothing leaves your Mac.
+On Macs that support it, the on-device model describes each clean in plain words and answers questions such as "What's using my disk?". A Scan button finds the biggest items and explains what they probably are. It only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. Nothing leaves your Mac.
 
 ## Build
 
