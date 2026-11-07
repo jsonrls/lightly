@@ -46,7 +46,7 @@ import SwiftUI
   private func scanned(fullAccess: Bool) async -> (folders: [FolderSize], largest: [FolderSize]) {
     if let measured, Date().timeIntervalSince(measured.date) < 600 { return measured.scan }
     let scan = await Task.detached {
-      DiskUsage.scan(DiskUsage.folders(home: .homeDirectory, fullAccess: fullAccess))
+      DiskUsage.scan(DiskUsage.folders(home: CleanEnvironment.userHome, fullAccess: fullAccess))
     }.value
     measured = (Date(), scan)
     return scan

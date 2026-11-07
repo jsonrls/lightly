@@ -29,6 +29,23 @@ public enum RunPolicy {
     return (restamped, !unsaved && due)
   }
 
+  /// The dry-run list, one path per line. Trash entries are only counted: their names need
+  /// Full Disk Access, and the list is saved where any process of this user can read it.
+  public static func dryRunList(_ touched: [URL], trashDir: URL, warning: String?) -> String {
+    func path(_ url: URL) -> String {
+      var p = url.path(percentEncoded: false)
+      while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
+      return p
+    }
+    let trash = path(trashDir)
+    let inTrash = { (url: URL) in path(url.deletingLastPathComponent()) == trash }
+    let count = touched.filter(inTrash).count
+    var lines = warning.map { [$0] } ?? []
+    lines += touched.filter { !inTrash($0) }.map(path)
+    if count > 0 { lines.append("\(trash): \(count) items") }
+    return lines.map { $0 + "\n" }.joined()
+  }
+
   /// Resuming stamps the schedule: catch-up is for a Mac that was asleep or off, not one the owner paused.
   public static func togglePause(_ state: inout AppState, now: Date) {
     state.paused.toggle()

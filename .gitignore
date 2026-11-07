@@ -2,3 +2,6 @@
 dist/
 .superpowers/
 .DS_Store
+website/
+launch-video/
+vo.aiff

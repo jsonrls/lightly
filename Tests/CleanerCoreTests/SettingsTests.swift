@@ -47,6 +47,24 @@ struct SettingsTests {
     #expect(!s.exists("store/state.corrupt.json"))
   }
 
+  // One unknown category must not re-enable the ones the owner turned off.
+  @Test func anUnknownCategoryKeepsTheKnownOnesDisabled() {
+    write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"disabled":["trash","futureThing"]}}"#)
+    #expect(Store(directory: s.url("store")).load().settings.disabled == [.trash])
+  }
+
+  // An empty kept list would delete what the owner kept, so a damaged one pauses like a damaged file.
+  @Test func aDamagedKeptListPauses() {
+    write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"keptFolders":["/k",1]}}"#)
+    #expect(Store(directory: s.url("store")).load().paused)
+    #expect(s.exists("store/state.corrupt.json"))
+  }
+
+  @Test func aDamagedDisabledListPauses() {
+    write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"disabled":"trash"}}"#)
+    #expect(Store(directory: s.url("store")).load().paused)
+  }
+
   @Test func anIntervalThePickerCannotShowFallsBackToTheDefault() {
     write(#"{"diskSamples":[],"history":[],"inventory":{"installed":[],"removed":{}},"paused":false,"storedSettings":{"intervalHours":2}}"#)
     #expect(Store(directory: s.url("store")).load().settings.intervalHours == CleanSettings().intervalHours)

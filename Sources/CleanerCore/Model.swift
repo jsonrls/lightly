@@ -25,12 +25,14 @@ public struct CleanResult: Codable, Sendable, Equatable {
   }
 
   /// Runs `op`. `.symlink`, `.notOnBootVolume` and `.kept` are silent skips; any other error is appended as "<name>: <message>".
-  public mutating func record(_ url: URL, _ op: (URL) throws -> Int64) {
+  /// `hidingName` replaces both with `label`, since an error's message can repeat the name.
+  public mutating func record(_ url: URL, hidingName label: String? = nil, _ op: (URL) throws -> Int64) {
     do {
       bytesFreed += try op(url)
     } catch DeletionGateway.Refusal.symlink, DeletionGateway.Refusal.notOnBootVolume, DeletionGateway.Refusal.kept {
     } catch {
-      errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+      errors.append(label.map { "\($0): could not be deleted (error \((error as NSError).code))" }
+        ?? "\(url.lastPathComponent): \(error.localizedDescription)")
     }
   }
 }

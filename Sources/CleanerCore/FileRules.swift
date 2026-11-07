@@ -111,7 +111,8 @@ public struct TrashRule: CleanRule {
     else { return result }
     for entry in entries {
       guard let added = dateAdded(entry), now.timeIntervalSince(added) >= Limits.trashAge else { continue }
-      result.record(entry) { try gateway.delete($0) }
+      // Names here are readable only with Full Disk Access; history is saved where they are not.
+      result.record(entry, hidingName: "An item in the Trash") { try gateway.delete($0) }
     }
     return result
   }

@@ -60,20 +60,21 @@ public struct DockerRule: CleanRule {
   private let runner: any CommandRunner
   private let mode: DeletionGateway.Mode
   private let isOnBootVolume: @Sendable (URL) -> Bool
-  private let candidates: [URL]
+  private let sockets: [URL]
 
-  public static let defaultCandidates: [URL] = [
-    "/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app/Contents/Resources/bin/docker",
-  ].map { URL(filePath: $0) }
+  /// Docker Desktop's own socket, the system link to it, then Colima's.
+  public static func defaultSockets(home: URL) -> [URL] {
+    [home.appending(path: ".docker/run/docker.sock"), URL(filePath: "/var/run/docker.sock"),
+     home.appending(path: ".colima/default/docker.sock")]
+  }
 
   public init(home: URL, runner: any CommandRunner, mode: DeletionGateway.Mode,
-              isOnBootVolume: @escaping @Sendable (URL) -> Bool,
-              candidates: [URL] = DockerRule.defaultCandidates) {
+              isOnBootVolume: @escaping @Sendable (URL) -> Bool, sockets: [URL]? = nil) {
     self.home = home
     self.runner = runner
     self.mode = mode
     self.isOnBootVolume = isOnBootVolume
-    self.candidates = candidates
+    self.sockets = sockets ?? Self.defaultSockets(home: home)
   }
 
   /// Result of reading Docker Desktop's settings: unknown means the rule must not touch Docker.
@@ -95,44 +96,51 @@ public struct DockerRule: CleanRule {
     return .internalDefault
   }
 
+  /// The Engine API through Apple's curl, so no docker program, plugin or helper runs: those sit in
+  /// folders other apps can write, and a child of this app can share its Full Disk Access.
+  /// `--disable` must come first: it skips ~/.curlrc.
+  private func request(_ socket: URL, _ method: String, _ path: String, timeout: TimeInterval) -> (status: Int32, output: String)? {
+    runner.run(URL(filePath: "/usr/bin/curl"),
+               ["--disable", "--silent", "--show-error", "--fail", "--max-time", "\(Int(timeout))", "--max-filesize", "67108864", "-X", method,
+                "--unix-socket", socket.path(percentEncoded: false), "http://localhost" + path],
+               timeout: timeout + 5)
+  }
+
   public func run(gateway: DeletionGateway, now: Date) -> CleanResult {
     var result = CleanResult(category: category, bytesFreed: 0, errors: [])
-    guard let docker = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) })
-    else { return result }
-    // Never launches Docker: a stopped daemon makes `info` fail and we stop.
-    guard let info = runner.run(docker, ["info"], timeout: 10), info.status == 0 else { return result }
+    // A dry run sends nothing: a prune is the only thing this rule does.
+    if mode == .dryRun { return result }
+    // Never starts Docker: a stopped daemon fails /info. A stale socket left by one engine falls through to the next.
+    guard let socket = sockets.first(where: { socket in
+      FileManager.default.fileExists(atPath: socket.path(percentEncoded: false))
+        && request(socket, "GET", "/info", timeout: 10)?.status == 0
+    }) else { return result }
     switch dataFolder() {
     case .unknown: return result
     case .custom(let url) where !isOnBootVolume(url): return result
     case .internalDefault where !isOnBootVolume(home): return result  // the default data folder sits under home
     default: break
     }
-    if mode == .dryRun { return result }
-    for arguments in [["builder", "prune", "-f"], ["image", "prune", "-f"]] {
-      guard let out = runner.run(docker, arguments, timeout: 120) else {
-        result.errors.append("docker \(arguments[0]) prune: failed to run or timed out")
+    // Defaults match `docker builder prune -f` and `docker image prune -f`: dangling only, never volumes or tagged images.
+    for (name, path) in [("builder", "/build/prune"), ("image", "/images/prune")] {
+      guard let out = request(socket, "POST", path, timeout: 120) else {
+        result.errors.append("docker \(name) prune: request failed to run or timed out")
         continue
       }
       if out.status != 0 {
-        result.errors.append("docker \(arguments[0]) prune: exit \(out.status)")
+        result.errors.append("docker \(name) prune: request failed (curl exit \(out.status))")
       } else {
-        result.bytesFreed += Self.parseReclaimed(out.output)
+        result.bytesFreed += Self.reclaimed(out.output)
       }
     }
     return result
   }
 
-  public static func parseReclaimed(_ output: String) -> Int64 {
-    // Classic prune prints "Total reclaimed space: X"; buildx (builder prune) prints "Total:\tX".
-    var rest: Substring?
-    for line in output.split(whereSeparator: \.isNewline) {
-      for marker in ["Total reclaimed space:", "Total:"] where line.hasPrefix(marker) { rest = line.dropFirst(marker.count) }
-    }
-    guard let token = rest?.split(whereSeparator: { $0 == " " || $0 == "\t" }).first else { return 0 }
-    let units: [(String, Double)] = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("kB", 1e3), ("B", 1)]
-    guard let (suffix, factor) = units.first(where: { token.hasSuffix($0.0) }),
-          let value = Double(token.dropLast(suffix.count))
-    else { return 0 }
-    return Int64((value * factor).rounded())
+  /// `SpaceReclaimed` from a prune response; 0 when missing or unreadable.
+  public static func reclaimed(_ json: String) -> Int64 {
+    struct Response: Decodable { var SpaceReclaimed: Int64? }
+    let value = (try? JSONDecoder().decode(Response.self, from: Data(json.utf8)))?.SpaceReclaimed ?? 0
+    // Capped at 1 PB: any process of this user can answer on that socket, and an overflowing sum would trap.
+    return min(max(0, value), 1_000_000_000_000_000)
   }
 }

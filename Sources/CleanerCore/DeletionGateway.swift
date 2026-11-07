@@ -16,7 +16,10 @@ public final class DeletionGateway: @unchecked Sendable {
         return values?.volumeIsInternal == true ? values?.volume : nil
       },
       remove: { try DeletionGateway.removeTree($0) },
-      trash: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
+      trash: {
+        try DeletionGateway.moveToTrash($0, trash: CleanEnvironment.userHome.appending(path: ".Trash"),
+                                        fallback: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) })
+      })
   }
 
   private let allowedRoots: [URL]
@@ -40,34 +43,92 @@ public final class DeletionGateway: @unchecked Sendable {
   /// Deleted, trashed, or would-be in dry run.
   public var touched: [URL] { lock.withLock { touchedURLs } }
 
-  /// Tools such as dotslash keep caches in read-only folders, which removeItem refuses.
-  static func removeTree(_ url: URL) throws {
-    do {
-      try FileManager.default.removeItem(at: url)
-    } catch {
-      var info = stat()
-      guard lstat(url.path(percentEncoded: false), &info) == 0 else { throw error }
-      makeFoldersWritable(url, device: info.st_dev)
-      try FileManager.default.removeItem(at: url)
-    }
+  /// Deletes through folder descriptors, never by path, so a folder swapped for a link after
+  /// `validate` fails the open instead of redirecting the delete. A link inside the tree is removed, not followed.
+  /// `device` is for tests; by default the target's own volume is the only one touched.
+  static func removeTree(_ url: URL, device: dev_t? = nil) throws {
+    let parent = try openFolder(url.deletingLastPathComponent())
+    defer { close(parent) }
+    var info = stat()
+    let name = url.lastPathComponent
+    guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw posixError() }
+    try removeEntry(name, in: parent, device: device ?? info.st_dev)
   }
 
-  /// Adds the owner write bit to readable folders only, so an unreadable folder still means keep.
-  /// Never follows a link and never crosses onto another volume.
-  static func makeFoldersWritable(_ url: URL, device: dev_t) {
-    // A descriptor, not a path: a folder swapped for a link after the listing cannot redirect it.
+  /// Tools such as dotslash keep caches in read-only folders, so readable folders get the owner
+  /// write bit. An unreadable folder still means keep, and another volume is never touched.
+  private static func removeEntry(_ name: String, in dir: Int32, device: dev_t) throws {
+    var info = stat()
+    // Gone already, for example a cache its tool rewrote mid-run: nothing left to delete.
+    guard fstatat(dir, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+      if errno == ENOENT { return }
+      throw posixError()
+    }
+    guard info.st_mode & S_IFMT == S_IFDIR else {
+      guard unlinkat(dir, name, 0) == 0 || errno == ENOENT else { throw posixError() }
+      return
+    }
+    guard info.st_dev == device else { throw POSIXError(.EXDEV) }
+    let fd = openat(dir, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    guard fd >= 0 else { throw posixError() }
+    defer { close(fd) }
+    // The folder opened must be the one checked above, not one renamed or mounted into its place since.
+    var opened = stat()
+    guard fstat(fd, &opened) == 0, opened.st_dev == info.st_dev, opened.st_ino == info.st_ino else { throw POSIXError(.EAGAIN) }
+    if info.st_mode & S_IWUSR == 0 {
+      guard info.st_mode & 0o500 == 0o500 else { throw POSIXError(.EACCES) }
+      fchmod(fd, info.st_mode & 0o7777 | S_IWUSR)
+    }
+    for child in try names(in: fd) { try removeEntry(child, in: fd, device: device) }
+    guard unlinkat(dir, name, AT_REMOVEDIR) == 0 else { throw posixError() }
+  }
+
+  private static func names(in fd: Int32) throws -> [String] {
+    let copy = dup(fd)
+    guard copy >= 0, let dir = fdopendir(copy) else {
+      if copy >= 0 { close(copy) }
+      throw posixError()
+    }
+    defer { closedir(dir) }
+    var names: [String] = []
+    while let entry = readdir(dir) {
+      let name = withUnsafeBytes(of: entry.pointee.d_name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+      if name != "." && name != ".." { names.append(name) }
+    }
+    return names
+  }
+
+  /// Moves the item into `trash` through folder descriptors, for the same reason as `removeTree`.
+  /// Finder's "Put Back" does not know these items: the price of never following a swapped-in link.
+  /// `fallback` runs when the Trash cannot be opened: missing, or unreadable without Full Disk Access.
+  /// Without that grant this app can reach nothing another app of this user cannot, so the path race grants nothing.
+  static func moveToTrash(_ url: URL, trash: URL, fallback: (URL) throws -> Void) throws {
+    let parent = try openFolder(url.deletingLastPathComponent())
+    defer { close(parent) }
+    let bin: Int32
+    do { bin = try openFolder(trash) } catch let error as POSIXError where [.ENOENT, .EACCES, .EPERM].contains(error.code) {
+      return try fallback(url)
+    }
+    defer { close(bin) }
+    let name = url.lastPathComponent
+    for n in 1...1000 {
+      // RENAME_EXCL: never replaces an item already in the Trash.
+      if renameatx_np(parent, name, bin, n == 1 ? name : "\(name) \(n)", UInt32(RENAME_EXCL)) == 0 { return }
+      guard errno == EEXIST else { throw posixError() }
+    }
+    throw POSIXError(.EEXIST)
+  }
+
+  /// O_NOFOLLOW_ANY: a link anywhere in the path fails the open.
+  private static func openFolder(_ url: URL) throws -> Int32 {
     let fd = url.withUnsafeFileSystemRepresentation { path in
       path.map { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY) } ?? -1
     }
-    guard fd >= 0 else { return }
-    var info = stat()
-    let eligible = fstat(fd, &info) == 0 && info.st_dev == device && info.st_mode & 0o500 == 0o500
-    if eligible { fchmod(fd, info.st_mode & 0o7777 | S_IWUSR) }
-    close(fd)
-    guard eligible else { return }
-    let children = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
-    for child in children ?? [] { makeFoldersWritable(child, device: device) }
+    guard fd >= 0 else { throw posixError() }
+    return fd
   }
+
+  private static func posixError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
 
   /// Roots are re-read on every call, so a link that appeared after init cannot widen them.
   public func validate(_ url: URL) throws {
