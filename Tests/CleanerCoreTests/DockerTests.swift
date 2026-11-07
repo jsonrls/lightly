@@ -4,34 +4,37 @@ import Testing
 
 final class FakeRunner: CommandRunner, @unchecked Sendable {
   private let lock = NSLock()
-  private var recorded: [[String]] = []
-  let infoStatus: Int32
+  private var recorded: [(executable: URL, arguments: [String])] = []
+  let infoStatus: @Sendable (String) -> Int32  // by socket path
   let pruneStatus: Int32
   init(infoStatus: Int32 = 0, pruneStatus: Int32 = 0) {
-    self.infoStatus = infoStatus
+    self.infoStatus = { _ in infoStatus }
     self.pruneStatus = pruneStatus
   }
-  var calls: [[String]] { lock.withLock { recorded } }
+  init(infoStatusFor: @escaping @Sendable (String) -> Int32) {
+    infoStatus = infoStatusFor
+    pruneStatus = 0
+  }
+  var invocations: [(executable: URL, arguments: [String])] { lock.withLock { recorded } }
+  /// Each call as its Engine API path, for example "/info".
+  var calls: [String] { invocations.map { String(($0.arguments.last ?? "").dropFirst("http://localhost".count)) } }
   func run(_ executable: URL, _ arguments: [String], timeout: TimeInterval) -> (status: Int32, output: String)? {
-    lock.withLock { recorded.append(arguments) }
-    if arguments == ["info"] { return (infoStatus, "") }
-    // buildx prints "Total:\t<size>" for `builder prune`, classic prune prints "Total reclaimed space:".
-    return (pruneStatus, arguments.first == "builder" ? "ID  RECLAIMABLE\nTotal:\t1.2GB\n" : "Total reclaimed space: 1MB")
+    lock.withLock { recorded.append((executable, arguments)) }
+    let path = arguments.last ?? ""
+    let socket = arguments.firstIndex(of: "--unix-socket").map { arguments[$0 + 1] } ?? ""
+    if path.hasSuffix("/info") { return (infoStatus(socket), "{}") }
+    return (pruneStatus, path.hasSuffix("/build/prune")
+      ? #"{"CachesDeleted":null,"SpaceReclaimed":1200000000}"# : #"{"ImagesDeleted":null,"SpaceReclaimed":1000000}"#)
   }
 }
 
 struct DockerTests {
   let box = Sandbox()
-  var binary: URL {
-    let url = box.file("bin/docker")
-    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path(percentEncoded: false))
-    return url
-  }
+  var socket: URL { box.file("docker.sock") }
 
-  func rule(_ runner: FakeRunner, mode: DeletionGateway.Mode = .live, candidates: [URL]? = nil,
+  func rule(_ runner: FakeRunner, mode: DeletionGateway.Mode = .live, sockets: [URL]? = nil,
             onBoot: Bool = true) -> DockerRule {
-    DockerRule(home: box.root, runner: runner, mode: mode, isOnBootVolume: { _ in onBoot },
-               candidates: candidates ?? [binary])
+    DockerRule(home: box.root, runner: runner, mode: mode, isOnBootVolume: { _ in onBoot }, sockets: sockets ?? [socket])
   }
   func gateway() -> DeletionGateway { box.gateway(roots: ["."]) }
   func settings(_ json: String, file: String = "settings-store.json") throws {
@@ -39,9 +42,9 @@ struct DockerTests {
     try json.write(to: dir.appending(path: file), atomically: true, encoding: .utf8)
   }
 
-  @Test func noBinaryRunsNothing() {
+  @Test func noSocketRunsNothing() {
     let runner = FakeRunner()
-    let result = rule(runner, candidates: [box.url("bin/missing")]).run(gateway: gateway(), now: .now)
+    let result = rule(runner, sockets: [box.url("missing.sock")]).run(gateway: gateway(), now: .now)
     #expect(runner.calls.isEmpty)
     #expect(result.bytesFreed == 0 && result.errors.isEmpty)
   }
@@ -49,14 +52,14 @@ struct DockerTests {
   @Test func stoppedDaemonRunsNoPrune() {
     let runner = FakeRunner(infoStatus: 1)
     let result = rule(runner).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
     #expect(result.bytesFreed == 0 && result.errors.isEmpty)
   }
 
   @Test func runsExactlyTwoPrunes() {
     let runner = FakeRunner()
     let result = rule(runner).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"], ["builder", "prune", "-f"], ["image", "prune", "-f"]])
+    #expect(runner.calls == ["/info", "/build/prune", "/images/prune"])
     #expect(result.bytesFreed == 1_201_000_000)
     #expect(result.errors.isEmpty)
   }
@@ -64,21 +67,21 @@ struct DockerTests {
   @Test func neverTouchesVolumesOrTaggedImages() {
     let runner = FakeRunner()
     _ = rule(runner).run(gateway: gateway(), now: .now)
-    let words = Set(runner.calls.flatMap { $0 })
-    for banned in ["volume", "system", "container", "-a", "--all"] { #expect(!words.contains(banned)) }
+    let request = runner.invocations.flatMap(\.arguments).joined(separator: " ")
+    for banned in ["/volumes", "/system", "/containers", "all=", "dangling=false"] { #expect(!request.contains(banned)) }
   }
 
   @Test func externalDataFolderSkips() throws {
     try settings(#"{"DataFolder": "/Volumes/Ext/Docker"}"#)
     let runner = FakeRunner()
     _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
   }
 
   @Test func defaultLocationOffBootVolumeSkips() {
     let runner = FakeRunner()
     _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
   }
 
   @Test func internalDataFolderPrunes() throws {
@@ -92,14 +95,14 @@ struct DockerTests {
     try settings(#"{"dataFolder": "/Volumes/Ext/Docker"}"#, file: "settings.json")
     let runner = FakeRunner()
     _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
   }
 
   @Test func unparseableSettingsTouchNothing() throws {
     try settings("{not json")
     let runner = FakeRunner()
     let result = rule(runner).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
     #expect(result.bytesFreed == 0)
   }
 
@@ -110,14 +113,14 @@ struct DockerTests {
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir) }
     let runner = FakeRunner()
     _ = rule(runner, onBoot: false).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
   }
 
   @Test func nonStringDataFolderTouchesNothing() throws {
     try settings(#"{"DataFolder": 5}"#)
     let runner = FakeRunner()
     _ = rule(runner).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls == ["/info"])
   }
 
   @Test func pruneFailureIsAnError() {
@@ -126,19 +129,38 @@ struct DockerTests {
     #expect(!result.errors.isEmpty)
   }
 
-  @Test func dryRunStopsAfterInfo() {
+  @Test func dryRunLaunchesNothing() {
     let runner = FakeRunner()
     _ = rule(runner, mode: .dryRun).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls.isEmpty)
+  }
+
+  // No docker program or plugin runs: only Apple's curl, which skips ~/.curlrc (--disable must come first).
+  @Test func talksToTheSocketThroughAppleCurlOnly() {
+    let runner = FakeRunner()
+    _ = rule(runner).run(gateway: gateway(), now: .now)
+    #expect(runner.invocations.count == 3)
+    for call in runner.invocations {
+      #expect(call.executable == URL(filePath: "/usr/bin/curl"))
+      #expect(call.arguments.first == "--disable")
+      #expect(call.arguments.contains(socket.path(percentEncoded: false)))
+    }
+  }
+
+  @Test func staleFirstSocketFallsThroughToTheNext() {
+    let dead = box.file("dead.sock").path(percentEncoded: false)
+    let live = box.file("live.sock")
+    let runner = FakeRunner(infoStatusFor: { $0 == dead ? 7 : 0 })
+    _ = rule(runner, sockets: [URL(filePath: dead), live]).run(gateway: gateway(), now: .now)
+    #expect(runner.calls == ["/info", "/info", "/build/prune", "/images/prune"])
+    #expect(runner.invocations.suffix(2).allSatisfy { $0.arguments.contains(live.path(percentEncoded: false)) })
   }
 
   @Test func parsesReclaimed() {
-    #expect(DockerRule.parseReclaimed("Total reclaimed space: 1.2GB") == 1_200_000_000)
-    #expect(DockerRule.parseReclaimed("Total reclaimed space: 310MB") == 310_000_000)
-    #expect(DockerRule.parseReclaimed("Total reclaimed space: 52.5kB") == 52_500)
-    #expect(DockerRule.parseReclaimed("Total reclaimed space: 0B") == 0)
-    #expect(DockerRule.parseReclaimed("garbage") == 0)
-    #expect(DockerRule.parseReclaimed("Total:\t1.2GB") == 1_200_000_000)
+    #expect(DockerRule.reclaimed(#"{"CachesDeleted":null,"SpaceReclaimed":1200000000}"#) == 1_200_000_000)
+    #expect(DockerRule.reclaimed(#"{"SpaceReclaimed":0}"#) == 0)
+    #expect(DockerRule.reclaimed("garbage") == 0)
+    #expect(DockerRule.reclaimed(#"{"SpaceReclaimed":-5}"#) == 0)
   }
 }
 

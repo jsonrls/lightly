@@ -50,6 +50,13 @@ struct LeftoversTests {
     #expect(i.due(now: t.addingTimeInterval(90 * Limits.day)).isEmpty)
   }
 
+  // The boot volume ignores case, so Com.apple.Foo names Apple's own com.apple.foo folders.
+  @Test func appleInAnyCaseNeverDue() {
+    var i = AppInventory()
+    i.removed = ["Com.apple.Foo": t, "COM.APPLE.bar": t, "group.com.apple.notes": t, "com.apple": t]
+    #expect(i.due(now: t.addingTimeInterval(90 * Limits.day)).isEmpty)
+  }
+
   @Test func resetAndMarkCleaned() {
     var i = AppInventory()
     i.removed = ["a.b": t, "c.d": t]

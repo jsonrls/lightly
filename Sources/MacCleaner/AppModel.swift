@@ -11,20 +11,25 @@ enum Launch {
     #if DEBUG
     return .dryRun
     #else
+    // Compiled in by `bundle.sh --live`, not read from Info.plist: a resource can be edited after signing.
+    #if MACCLEANER_LIVE
+    let liveBuild = true
+    #else
+    let liveBuild = false
+    #endif
     return RunPolicy.mode(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment,
-                          bundleLive: Bundle.main.object(forInfoDictionaryKey: "MacCleanerLive") as? Bool == true)
+                          bundleLive: liveBuild)
     #endif
   }()
 }
 
 let trashWarning = "# Trash not readable: list is incomplete. Grant Full Disk Access to include it."
+private let trashDir = CleanEnvironment.userHome.appending(path: ".Trash", directoryHint: .isDirectory)
 
 private func writeDryRunList(_ touched: [URL], to directory: URL, warning: String? = nil) throws -> URL {
-  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-  let file = directory.appending(path: "dry-run.txt")
-  let lines = (warning.map { $0 + "\n" } ?? "") + touched.map { $0.path(percentEncoded: false) + "\n" }.joined()
-  try lines.write(to: file, atomically: true, encoding: .utf8)
-  return file
+  let text = RunPolicy.dryRunList(touched, trashDir: trashDir, warning: warning)
+  try Store(directory: directory).write(Data(text.utf8), named: "dry-run.txt")
+  return directory.appending(path: "dry-run.txt")
 }
 
 /// Hardcodes `.dryRun` instead of reading `Launch.mode`, so this path can never delete.
@@ -33,7 +38,7 @@ func runDryRunReport() -> Never {
   var state = Store(directory: directory).peek()
   let (record, touched) = CleanSession.run(env: CleanEnvironment.live(mode: .dryRun), state: &state, now: Date(), manual: true)
   do {
-    let warning = TrashRule.hasAccess(trashDir: URL.homeDirectory.appending(path: ".Trash", directoryHint: .isDirectory)) ? nil : trashWarning
+    let warning = TrashRule.hasAccess(trashDir: trashDir) ? nil : trashWarning
     let file = try writeDryRunList(touched, to: directory, warning: warning)
     if let warning { print(warning) }
     print(file.path(percentEncoded: false))
@@ -51,6 +56,7 @@ func runDryRunReport() -> Never {
   var isCleaning = false
   var trashAccess: Bool
   private(set) var unsaved = false  // the last save failed; retried on each schedule check
+  private var readOnly = false  // the state folder was refused at launch
   private(set) var dryRunRecord: RunRecord?
   var lastRecord: RunRecord? { dryRunRecord ?? state.history.last }
   private var explained: (date: Date, insight: CleanInsight)?
@@ -68,11 +74,10 @@ func runDryRunReport() -> Never {
   let mode: DeletionGateway.Mode
   private let systemStats: SystemStats
   private let storeDirectory = Store.defaultDirectory()
-  private let trashDir = URL.homeDirectory.appending(path: ".Trash", directoryHint: .isDirectory)
 
   init(mode: DeletionGateway.Mode) {
     self.mode = mode
-    let home = URL.homeDirectory
+    let home = CleanEnvironment.userHome
     systemStats = SystemStats(volume: DeletionGateway.Hooks.live.volumeOf(home) ?? home)
     stats = systemStats.sample()
     trashAccess = TrashRule.hasAccess(trashDir: trashDir)
@@ -80,7 +85,11 @@ func runDryRunReport() -> Never {
 
   func start() {
     let store = Store(directory: storeDirectory)
+    // A refused folder means the real state was not read: saving defaults over it would lose the kept list.
+    // Checked on both sides of the load: a refusal during it would otherwise return defaults that a later save writes back.
+    let usableBefore = store.isUsable
     state = mode == .live ? store.load() : store.peek()
+    readOnly = !usableBefore || !store.isUsable
     if RunPolicy.stampFirstLaunch(&state, now: Date()) { save() }
     Task {
       while !Task.isCancelled {
@@ -142,6 +151,11 @@ func runDryRunReport() -> Never {
   /// or its `lastScheduledRun` stamp would make the first live launch clean at once.
   private func save() {
     guard mode == .live else { return }
+    // Unsaved also blocks scheduled runs, so a refused state folder never cleans.
+    guard !readOnly else {
+      unsaved = true
+      return
+    }
     do {
       try Store(directory: storeDirectory).save(state)
       unsaved = false

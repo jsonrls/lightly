@@ -28,8 +28,12 @@ public struct CleanSettings: Codable, Sendable, Equatable {
     useAppleIntelligence = (try? values.decode(Bool.self, forKey: .useAppleIntelligence)) ?? useAppleIntelligence
     // A value the picker cannot show would leave it blank while cleaning ran on that hidden value.
     if let hours = try? values.decode(Int.self, forKey: .intervalHours), Self.intervalChoices.contains(hours) { intervalHours = hours }
-    disabled = (try? values.decode(Set<CleanCategory>.self, forKey: .disabled)) ?? disabled
-    keptFolders = (try? values.decode([String].self, forKey: .keptFolders)) ?? keptFolders
+    // These two only ever narrow deletion, so a fallback would widen it. Unknown category names are
+    // dropped and the rest kept; a damaged list fails the whole state, which then starts paused.
+    if values.contains(.disabled) {
+      disabled = Set(try values.decode([String].self, forKey: .disabled).compactMap(CleanCategory.init(rawValue:)))
+    }
+    if values.contains(.keptFolders) { keptFolders = try values.decode([String].self, forKey: .keptFolders) }
   }
 
   /// Never under an hour, so a damaged value cannot clean in a loop.
@@ -62,31 +66,90 @@ public struct Store: Sendable {
   let directory: URL
   public init(directory: URL) { self.directory = directory }
 
-  private var file: URL { directory.appending(path: "state.json") }
+  private enum Folder { case missing, unsafe, open(Int32) }
+
+  /// The folder as a descriptor, refused if any part of its path is a link or it is not ours: every read,
+  /// write and rename goes through it, so a folder swapped for a link cannot send them elsewhere.
+  private func folder() -> Folder {
+    let fd = directory.withUnsafeFileSystemRepresentation { path in
+      path.map { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY) } ?? -1
+    }
+    guard fd >= 0 else { return errno == ENOENT ? .missing : .unsafe }
+    var info = stat()
+    guard fstat(fd, &info) == 0, info.st_uid == getuid() else {
+      close(fd)
+      return .unsafe
+    }
+    return .open(fd)
+  }
+
+  /// False when the folder exists but is refused (a link, another owner, an open error). Then `load()` could
+  /// not read the real state, and saving the paused defaults over it would lose the owner's settings.
+  public var isUsable: Bool {
+    switch folder() {
+    case .missing: return true
+    case .unsafe: return false
+    case .open(let fd):
+      close(fd)
+      return true
+    }
+  }
 
   /// Missing file is a fresh install. A file that exists but cannot be read or decoded is moved to
   /// state.corrupt.json and the app starts paused, so a lost pause never turns into a surprise clean.
+  /// An unsafe folder is left untouched and also starts paused.
   public func load() -> AppState {
-    if let state = read() { return state }
-    let aside = directory.appending(path: "state.corrupt.json")
-    // rename(2), not FileManager: it replaces an older aside atomically, and deletion is reserved for DeletionGateway.
-    _ = rename(file.path(percentEncoded: false), aside.path(percentEncoded: false))  // on failure we still start paused
+    guard case .open(let dir) = folder() else { return peek() }
+    defer { close(dir) }
+    if let state = read(in: dir) { return state }
+    // renameat, not FileManager: it replaces an older aside atomically, and deletion is reserved for DeletionGateway.
+    _ = renameat(dir, "state.json", dir, "state.corrupt.json")  // on failure we still start paused
     return Self.pausedState
   }
 
   /// Same result as `load()` but changes nothing on disk, so a dry run cannot move a corrupt file
   /// away and leave the next live launch unpaused.
-  public func peek() -> AppState { read() ?? Self.pausedState }
+  public func peek() -> AppState {
+    switch folder() {
+    case .missing: return AppState()
+    case .unsafe: return Self.pausedState
+    case .open(let dir):
+      defer { close(dir) }
+      return read(in: dir) ?? Self.pausedState
+    }
+  }
 
-  /// Nil when the file exists but cannot be read or decoded.
-  private func read() -> AppState? {
-    let data: Data
-    do { data = try Data(contentsOf: file) } catch let e as CocoaError where e.code == .fileReadNoSuchFile {
-      return AppState()
-    } catch { return nil }
+  /// Nil when the file exists but cannot be read or decoded. Non-blocking and regular files only,
+  /// so a planted FIFO or device cannot hang the launch.
+  private func read(in dir: Int32) -> AppState? {
+    let fd = openat(dir, "state.json", O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+    if fd < 0 { return errno == ENOENT ? AppState() : nil }
+    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    var info = stat()
+    guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, let data = try? handle.readToEnd() else { return nil }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try? decoder.decode(AppState.self, from: data)
+  }
+
+  /// Writes `name` in the state folder atomically: a new file, then a rename over the old one.
+  public func write(_ data: Data, named name: String) throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    guard case .open(let dir) = folder() else { throw CocoaError(.fileWriteNoPermission) }
+    defer { close(dir) }
+    let temp = ".\(name).\(UUID().uuidString)"
+    let fd = openat(dir, temp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+    guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    do {
+      let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+      try handle.write(contentsOf: data)
+      // On disk before the rename, so a power loss leaves the old file rather than an empty new one.
+      _ = fcntl(fd, F_FULLFSYNC)
+      guard renameat(dir, temp, dir, name) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    } catch {
+      unlinkat(dir, temp, 0)
+      throw error
+    }
   }
 
   private static var pausedState: AppState {
@@ -99,12 +162,10 @@ public struct Store: Sendable {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(state)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try data.write(to: file, options: .atomic)
+    try write(encoder.encode(state), named: "state.json")
   }
 
   public static func defaultDirectory() -> URL {
-    URL.applicationSupportDirectory.appending(path: "com.maccleaner.app", directoryHint: .isDirectory)
+    CleanEnvironment.userHome.appending(path: "Library/Application Support/com.maccleaner.app", directoryHint: .isDirectory)
   }
 }

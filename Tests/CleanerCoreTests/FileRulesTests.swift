@@ -113,6 +113,19 @@ struct FileRulesTests {
     #expect(box.exists("Trash/recent") && box.exists("Trash/unknown"))
   }
 
+  // Trash names are readable only with Full Disk Access, and run history is saved where they are not protected.
+  @Test func trashFailureDoesNotRecordTheName() {
+    box.file("Trash/secret-name.pdf")
+    var hooks = box.hooks
+    hooks.remove = { url in
+      throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: url.path(percentEncoded: false)])
+    }
+    let rule = TrashRule(trashDir: box.url("Trash"), dateAdded: { [now] _ in now.addingTimeInterval(-40 * Limits.day) })
+    let r = rule.run(gateway: gw(hooks: hooks), now: now)
+    #expect(r.errors.count == 1)
+    #expect(!r.errors.joined().contains("secret-name"))
+  }
+
   @Test func trashKeepsHiddenFiles() {
     box.file("Trash/.DS_Store")
     box.file("Trash/item")

@@ -60,7 +60,7 @@ It lives in the menu bar as a small white logo and, by default, runs every hour,
 - Trash items older than 30 days (needs Full Disk Access)
 - Leftovers from apps that have been gone for 30 days, moved to the Trash first
 - Developer caches once a week: npm, yarn, pnpm, pip, Homebrew, Xcode DerivedData
-- Docker build cache and dangling images, only when Docker's data is on the internal disk
+- Docker build cache and dangling images, only when Docker's data is on the internal disk. Lightly talks to Docker's socket directly (Docker Desktop or Colima) and never runs the `docker` command
 
 ## What it never touches
 
@@ -72,6 +72,8 @@ It lives in the menu bar as a small white logo and, by default, runs every hour,
 Every deletion goes through one gateway, `DeletionGateway`, which refuses anything outside these rules.
 
 **Cleaning is permanent and needs no confirmation.** Read the dry-run list before you run a live build.
+
+Your settings live in `~/Library/Application Support/com.maccleaner.app/state.json`. Any app running as you can change that file, including the "Always kept" list and whether the Trash is cleaned.
 
 ## Settings
 
