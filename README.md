@@ -7,12 +7,12 @@
 
 A native macOS menu bar app that cleans junk by itself. There is nothing to press.
 
-It lives in the menu bar as a small white logo and runs every 3 hours, day and night, or at the next wake if the Mac was asleep.
+It lives in the menu bar as a small white logo and, by default, runs every 3 hours, day and night, or at the next wake if the Mac was asleep.
 
 ## What you see
 
-- **Menu bar window:** click the logo for disk, memory, CPU and battery as rings, plus the last clean and a "Clean now" button.
-- **Full view:** larger rings, the last clean by category, a paged cleaning history, and the Apple Intelligence ask box.
+- **Menu bar window:** click the logo for disk, memory, CPU and battery as rings, the last clean with a summary of this month's cleaning, and a "Clean now" button. The bottom row has an "Open full view" link, the gear icon and a red quit button.
+- **Full view:** larger rings, the last clean by category, a paged cleaning history, and Dusty, a chat assistant powered by Apple Intelligence.
 - **Settings:** the gear icon opens them.
 
 ## What it cleans
@@ -44,11 +44,17 @@ Every deletion goes through one gateway, `DeletionGateway`, which refuses anythi
 - Always kept: files and folders that are never cleaned
 - Full Disk Access status
 
-## Apple Intelligence
+## Dusty and Apple Intelligence
 
-On Macs that support it, the on-device model describes each clean in plain words and answers questions such as "What's using my disk?". A Scan button finds the biggest items and explains what they probably are.
+On Macs that support it, the on-device model describes each clean in plain words. As Dusty, it also chats about your Mac in the full view:
 
-It only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. An answer that fails the check is replaced by the facts. Nothing leaves your Mac, and you can switch it off in Settings.
+- Ask "What's using my disk?", then follow up with "What's the second one?". Dusty remembers the last 4 exchanges.
+- Ask it to "list down the biggest items" for a numbered list.
+- Press Scan to find the biggest items and hear what they probably are.
+
+The chat stays in memory until you quit, and is never saved.
+
+Dusty only rewords measured facts. It has no tools, it cannot decide what gets deleted, and its answers are checked against those facts. An answer that fails the check is replaced by the facts. It knows the folder totals and the 12 biggest items, so a list can be short or incomplete. Nothing leaves your Mac, and you can switch it off in Settings.
 
 ## Build
 
@@ -79,4 +85,4 @@ The first automatic clean waits 3 hours after the first launch.
 
 ## Design
 
-The design and plan are in `docs/superpowers/`. Logo files are in `design/logo/`.
+The design and plan are in `docs/superpowers/`. Logo files are in `design/logo/`. Dusty's loading animation is based on the Loading State component from [beautifului.dev](https://www.beautifului.dev/) (MIT).

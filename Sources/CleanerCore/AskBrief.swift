@@ -53,6 +53,18 @@ public enum DiskUsage {
   }
 }
 
+/// One question and its reply. Held in memory only, never saved.
+public struct ChatTurn: Sendable, Equatable, Identifiable {
+  public let id = UUID()
+  public let question: String
+  public var answer: String?
+
+  public init(question: String, answer: String? = nil) {
+    self.question = question
+    self.answer = answer
+  }
+}
+
 /// What the on-device model is told when asked a question, and the check on its answer.
 /// It gets measured facts and no tools, so it can only reword them: it cannot act on anything.
 public enum AskBrief {
@@ -98,11 +110,32 @@ public enum AskBrief {
     return lines.joined(separator: "\n")
   }
 
+  /// Each question starts a new session with the replies the person saw, so a reply the checks replaced is never remembered.
+  /// Only the last few turns go in, because the on-device model has a small context window.
+  public static func prompt(facts: String, history: [ChatTurn], question: String, memory: Int = 4) -> String {
+    let said = history.filter { $0.answer != nil }.suffix(memory).flatMap { ["Person: \($0.question)", "You: \($0.answer ?? "")"] }
+    let conversation = said.isEmpty ? "" : "Conversation so far:\n\(said.joined(separator: "\n"))\n\n"
+    return "Facts:\n\(facts)\n\n\(conversation)Question: \(question)"
+  }
+
   /// Rejects a figure that was not measured, and any advice to delete: the model cannot judge what is safe to lose.
   public static func isSafe(_ answer: String, facts: String, question: String) -> Bool {
     let known = Set(CleanBrief.numbers(in: facts) + CleanBrief.numbers(in: question))
-    return Set(CleanBrief.numbers(in: answer)).isSubset(of: known)
-      && answer.firstMatch(of: /(?i)\b(delete|deleting|remove|removing|erase|erasing|uninstall|uninstalling|wipe|wiping|empty|emptying)\b/) == nil
+    let figures = answer.replacing(/(?m)^\s*\d+[.)]\s/, with: "")  // a list's "1." is not a measurement
+    return Set(CleanBrief.numbers(in: figures)).isSubset(of: known) && !mentionsDeleting(answer)
+  }
+
+  public static func wantsList(_ question: String) -> Bool {
+    question.firstMatch(of: /(?i)\blist\b/) != nil
+  }
+
+  /// The model sometimes answers a list request in one sentence.
+  public static func isList(_ answer: String) -> Bool {
+    answer.matches(of: /(?m)^\s*(?:\d+[.)]|[-•*])\s/).count >= 2
+  }
+
+  private static func mentionsDeleting(_ text: String) -> Bool {
+    text.firstMatch(of: /(?i)\b(delete|deleting|remove|removing|erase|erasing|uninstall|uninstalling|wipe|wiping|empty|emptying)\b/) != nil
   }
 
   /// A scan answer must name the three largest items in order: the model states real figures but ranks them badly.
@@ -116,9 +149,15 @@ public enum AskBrief {
     return true
   }
 
-  public static func fallback(_ snapshot: Snapshot) -> String {
+  public static func fallback(_ snapshot: Snapshot, question: String = "") -> String {
+    if mentionsDeleting(question) { return "I can't say what is safe to lose, so that choice is yours. Lightly cleans caches by itself." }
     let free = "Your disk has \(Format.bytes(snapshot.stats.diskFreeBytes)) free."
     let items = snapshot.largest.isEmpty ? snapshot.folders : snapshot.largest
+    if wantsList(question) {
+      let wanted = question.firstMatch(of: /(?i)\bfolders?\b/) != nil ? snapshot.folders : items
+      let lines = wanted.prefix(10).enumerated().map { "\($0.offset + 1). \($0.element.name): \(Format.bytes($0.element.bytes))" }
+      if !lines.isEmpty { return lines.joined(separator: "\n") }
+    }
     let biggest = items.prefix(3).map { "\($0.name) \(Format.bytes($0.bytes))" }.joined(separator: ", ")
     return biggest.isEmpty ? free : "\(free) The biggest things I measured: \(biggest)."
   }

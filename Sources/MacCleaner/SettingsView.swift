@@ -36,7 +36,7 @@ struct SettingsView: View {
       }
       Divider()
       row("Use Apple Intelligence",
-          detail: CleanInsight.isModelAvailable ? "Summaries and the ask box, on this Mac only" : "Not available on this Mac",
+          detail: CleanInsight.isModelAvailable ? "Summaries and chat with Dusty, on this Mac only" : "Not available on this Mac",
           isOn: setting(\.useAppleIntelligence))
         .disabled(!CleanInsight.isModelAvailable)
     }
