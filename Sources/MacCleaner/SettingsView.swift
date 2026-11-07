@@ -165,7 +165,7 @@ struct SettingsView: View {
         Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 26, height: 26)
         VStack(alignment: .leading, spacing: 1) {
           Text("Lightly").font(.callout.weight(.semibold))
-          Text("Version \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "dev")")
+          Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
