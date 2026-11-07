@@ -72,7 +72,9 @@ public enum CleanSession {
       }
     }
 
+    let settings = next.settings
     let gateway = DeletionGateway(allowedRoots: env.allowedRoots, deniedRoots: env.deniedRoots,
+                                  keptRoots: settings.keptFolders.map { URL(filePath: $0) },
                                   bootVolume: env.bootVolume, mode: env.mode, hooks: env.hooks)
     let rules: [any CleanRule] = [
       // First: the cache and log rules would delete for good what belongs in the Trash.
@@ -87,7 +89,8 @@ public enum CleanSession {
       }),
     ]
     let runWeekly = manual || Scheduler.weeklyDue(now: now, lastWeeklyRun: next.lastWeeklyRun)
-    let results = rules.filter { runWeekly || !$0.weekly }.map { $0.run(gateway: gateway, now: now) }
+    let results = rules.filter { (runWeekly || !$0.weekly) && !settings.disabled.contains($0.category) }
+      .map { $0.run(gateway: gateway, now: now) }
 
     next.inventory.markCleaned(leftovers.filter { id in
       !LeftoverRule.candidates(libraryDir: library, bundleID: id).contains(where: LeftoverRule.exists)

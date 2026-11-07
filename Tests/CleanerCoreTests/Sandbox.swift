@@ -76,9 +76,9 @@ struct Sandbox {
       })
   }
 
-  func gateway(roots: [String], denied: [String] = [], mode: DeletionGateway.Mode = .live,
+  func gateway(roots: [String], denied: [String] = [], kept: [String] = [], mode: DeletionGateway.Mode = .live,
                hooks: DeletionGateway.Hooks? = nil) -> DeletionGateway {
-    DeletionGateway(allowedRoots: roots.map(url), deniedRoots: denied.map(url),
+    DeletionGateway(allowedRoots: roots.map(url), deniedRoots: denied.map(url), keptRoots: kept.map(url),
                     bootVolume: URL(filePath: "/"), mode: mode, hooks: hooks ?? self.hooks)
   }
 

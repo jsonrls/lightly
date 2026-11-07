@@ -54,11 +54,14 @@ func runDryRunReport() -> Never {
   private(set) var dryRunRecord: RunRecord?
   var lastRecord: RunRecord? { dryRunRecord ?? state.history.last }
   private var explained: (date: Date, insight: CleanInsight)?
-  var insight: CleanInsight? { explained?.date == lastRecord?.date ? explained?.insight : nil }
+  var insight: CleanInsight? {
+    state.settings.useAppleIntelligence && explained?.date == lastRecord?.date ? explained?.insight : nil
+  }
+  private(set) var loginStatus = SMAppService.mainApp.status
 
   /// Called when a window shows the record, so a run nobody looks at costs nothing.
   func explainLastRecord() async {
-    guard let record = lastRecord, explained?.date != record.date else { return }
+    guard state.settings.useAppleIntelligence, let record = lastRecord, explained?.date != record.date else { return }
     if let insight = await CleanInsight.explain(record) { explained = (record.date, insight) }
   }
 
@@ -97,12 +100,33 @@ func runDryRunReport() -> Never {
         checkSchedule()
       }
     }
-    if Bundle.main.bundleURL.pathExtension == "app", SMAppService.mainApp.status == .notRegistered {
-      do { try SMAppService.mainApp.register() } catch { NSLog("Login item not registered: %@", "\(error)") }
-    }
+    applyLoginItem()
   }
 
   func cleanNow() { clean(manual: true) }
+
+  func updateSettings(_ change: (inout CleanSettings) -> Void) {
+    change(&state.settings)
+    save()
+  }
+
+  func setOpenAtLogin(_ on: Bool) {
+    updateSettings { $0.openAtLogin = on }
+    applyLoginItem()
+  }
+
+  /// Live only: a dry-run build must never leave a login item behind.
+  private func applyLoginItem() {
+    guard mode == .live, Bundle.main.bundleURL.pathExtension == "app" else { return }
+    let service = SMAppService.mainApp
+    do {
+      if state.settings.openAtLogin, service.status == .notRegistered { try service.register() }
+      if !state.settings.openAtLogin, service.status == .enabled { try service.unregister() }
+    } catch {
+      NSLog("Login item not changed: %@", "\(error)")
+    }
+    loginStatus = service.status
+  }
 
   func togglePause() {
     RunPolicy.togglePause(&state, now: Date())
@@ -141,7 +165,7 @@ func runDryRunReport() -> Never {
     trashAccess = TrashRule.hasAccess(trashDir: trashDir)
     guard mode == .live, !isCleaning else { return }
     if unsaved { save() }
-    let check = RunPolicy.scheduleCheck(&state, unsaved: unsaved, now: Date(), calendar: .current)
+    let check = RunPolicy.scheduleCheck(&state, unsaved: unsaved, now: Date())
     if check.restamped { save() }
     if check.shouldRun { clean(manual: false) }
   }

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct FullView: View {
   let model: AppModel
+  let ask: AskModel
   @State private var page = 0
 
   var body: some View {
@@ -13,7 +14,7 @@ struct FullView: View {
         lastClean
         history
       }
-      AskPanel(model: model)
+      AskPanel(model: model, ask: ask)
       footer
     }
     .padding(16)

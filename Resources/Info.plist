@@ -6,8 +6,10 @@
 	<string>MacCleaner</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.maccleaner.app</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleName</key>
-	<string>Mac Cleaner</string>
+	<string>Lightly</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleVersion</key>
