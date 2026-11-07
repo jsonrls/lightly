@@ -25,9 +25,20 @@ struct SchedulerTests {
   @Test func neverStampedDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: nil)) }
   @Test func pausedDoesNotRun() { #expect(!run(now: "2026-11-06 12:00", last: "2026-11-03 12:00", paused: true)) }
 
-  @Test func runsEveryThreeHoursNotBefore() {
-    #expect(!run(now: "2026-11-06 11:59", last: "2026-11-06 09:00"))
-    #expect(run(now: "2026-11-06 12:00", last: "2026-11-06 09:00"))
+  @Test func runsEveryHourByDefaultNotBefore() {
+    #expect(!run(now: "2026-11-06 09:59", last: "2026-11-06 09:00"))
+    #expect(run(now: "2026-11-06 10:00", last: "2026-11-06 09:00"))
+  }
+
+  @Test(arguments: CleanSettings.intervalChoices)
+  func everyChoiceRunsOnItsInterval(hours: Int) {
+    let now = at("2026-11-06 12:00")
+    var state = AppState()
+    state.settings.intervalHours = hours
+    state.lastScheduledRun = now - TimeInterval(hours) * 3600 + 60
+    #expect(!RunPolicy.scheduleCheck(&state, unsaved: false, now: now).shouldRun)
+    state.lastScheduledRun = now - TimeInterval(hours) * 3600
+    #expect(RunPolicy.scheduleCheck(&state, unsaved: false, now: now).shouldRun)
   }
 
   @Test func runsAtAnyHourOfTheDay() { #expect(run(now: "2026-11-06 22:30", last: "2026-11-06 19:30")) }

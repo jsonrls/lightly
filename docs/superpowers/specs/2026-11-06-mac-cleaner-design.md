@@ -52,7 +52,7 @@ These make the app a failure even if everything else works:
 | Developer caches | See below | Once a week **(call)** | Delete |
 | Docker | Docker CLI | Build cache and dangling images only | Docker prune commands |
 
-Runs every 3 hours, as the owner asked; the first design said once a day at 03:00. If the Mac was asleep or off when a run was due, it runs at the next wake or launch. Resuming after a pause never triggers a catch-up clean.
+Runs every hour by default, as the owner asked, and Settings offers 1, 3, 6 or 12 hours or once a day. The first design said once a day at 03:00. If the Mac was asleep or off when a run was due, it runs at the next wake or launch. Resuming after a pause never triggers a catch-up clean.
 
 Details, all **(call)**:
 
@@ -74,7 +74,7 @@ All **(call)**, built to enforce the anti-goals:
 - Every run is recorded: time, category, bytes freed, errors.
 - Debug builds are dry-run only, so development never cleans the real home folder. A release build deletes only if it was made with `scripts/bundle.sh --live`.
 - Scheduled runs stop while state cannot be saved, because a lost stamp or pause would repeat a clean.
-- Installing never deletes at once: the first automatic clean waits 3 hours after first launch.
+- Installing never deletes at once: the first automatic clean waits one full interval after first launch, an hour by default.
 - A clock moved backwards never triggers a clean.
 - A state file that cannot be read is kept aside as `state.corrupt.json`, and the app starts paused, so a lost pause never turns into a clean.
 - Before the first real clean on the owner's Mac, the owner reads the dry-run list from that Mac and says yes.

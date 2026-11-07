@@ -10,6 +10,14 @@ public enum Format {
 
   public static func percent(_ f: Double) -> String { "\(Int((f * 100).rounded()))%" }
 
+  public static func interval(hours: Int) -> String {
+    switch hours {
+    case 1: "Every hour"
+    case 24: "Once a day"
+    default: "Every \(hours) hours"
+    }
+  }
+
   /// Stopwatch style, cut to tenths so 59.99 never reads as 60.0s.
   public static func elapsed(_ seconds: Double) -> String {
     let tenths = Int(seconds * 10)

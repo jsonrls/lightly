@@ -36,6 +36,9 @@ import Testing
   let now = cal.date(from: DateComponents(year: 2026, month: 11, day: 6, hour: 9))!
   #expect(Format.monthlyTotal([rec(11, 2, 10), rec(11, 5, 5), rec(10, 30, 99)], now: now, calendar: cal) == 15)
 }
+@Test func everyIntervalChoiceHasAName() {
+  #expect(CleanSettings.intervalChoices.map(Format.interval) == ["Every hour", "Every 3 hours", "Every 6 hours", "Every 12 hours", "Once a day"])
+}
 @Test func monthInsightSummarisesThisMonthOnly() {
   var cal = Calendar(identifier: .gregorian)
   cal.timeZone = TimeZone(identifier: "UTC")!
