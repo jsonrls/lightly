@@ -16,7 +16,7 @@ struct PopoverView: View {
         gauges
         lastClean
         if !model.trashAccess { trashNotice }
-        cleanButton
+        if model.state.paused || model.isCleaning { cleanButton }  // cleaning is automatic, the full view keeps a manual button
         footer
       }
     }
