@@ -11,13 +11,13 @@ struct PopoverView: View {
   var body: some View {
     GlassEffectContainer(spacing: 4) {
       VStack(alignment: .leading, spacing: 10) {
-        header
         StatusLines(model: model)
         disk
         gauges
         lastClean
         if !model.trashAccess { trashNotice }
-        actions
+        cleanButton
+        footer
       }
     }
     .padding(14)
@@ -25,17 +25,18 @@ struct PopoverView: View {
     .background(WindowReader(window: $window))
   }
 
-  private var header: some View {
+  private var footer: some View {
     HStack(spacing: 8) {
-      Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 26, height: 26)
-      Text("Lightly").font(.headline)
+      Button("Open full view") { open("full") }
+        .buttonStyle(.link)
       Spacer()
       settingsButton
       Button { NSApplication.shared.terminate(nil) } label: {
         Image(systemName: "power").frame(width: 30, height: 30).contentShape(.circle)
       }
       .buttonStyle(.plain)
-      .glassEffect(.regular.interactive(), in: .circle)
+      .foregroundStyle(.white)
+      .glassEffect(.regular.tint(.red).interactive(), in: .circle)
       .disabled(model.isCleaning)  // quitting mid-clean would repeat the run at next launch
       .help("Quit Lightly")
       .accessibilityLabel("Quit Lightly")
@@ -126,18 +127,12 @@ struct PopoverView: View {
     }
   }
 
-  private var actions: some View {
-    VStack(spacing: 8) {
-      Button { model.cleanNow() } label: {
-        Label(model.isCleaning ? "Cleaning…" : "Clean now", systemImage: "sparkles").frame(maxWidth: .infinity)
-      }
-      .buttonStyle(.glassProminent)
-      .disabled(model.isCleaning)
-      Button { open("full") } label: {
-        Label("Open full view", systemImage: "macwindow").frame(maxWidth: .infinity)
-      }
-      .buttonStyle(.glass)
+  private var cleanButton: some View {
+    Button { model.cleanNow() } label: {
+      Label(model.isCleaning ? "Cleaning…" : "Clean now", systemImage: "trash").frame(maxWidth: .infinity)
     }
+    .buttonStyle(.glassProminent)
+    .disabled(model.isCleaning)
     .buttonBorderShape(.capsule)
     .controlSize(.large)
   }
@@ -195,16 +190,19 @@ struct StatusLines: View {
   }
 }
 
-/// The Apple Intelligence description of the last run, labelled because it can be wrong.
+/// The Apple Intelligence description of the last run, then a measured line about the month.
 struct InsightLines: View {
   let model: AppModel
 
   var body: some View {
-    if let insight = model.insight {
+    let month = Format.monthInsight(model.state.history, now: Date(), calendar: .current)
+    if model.insight != nil || month != nil {
       VStack(alignment: .leading, spacing: 3) {
-        Text(insight.headline)
-        if !insight.problem.isEmpty { Text(insight.problem) }
-        Label("Apple Intelligence", systemImage: "apple.intelligence").font(.caption2).foregroundStyle(.tertiary)
+        if let insight = model.insight {
+          Text(insight.headline)
+          if !insight.problem.isEmpty { Text(insight.problem) }
+        }
+        if let month { Text(month) }
       }
       .font(.caption)
       .foregroundStyle(.secondary)
