@@ -162,7 +162,7 @@ struct SettingsView: View {
       HStack(spacing: 10) {
         Image(systemName: "sparkles").font(.title2).foregroundStyle(.tint)
         VStack(alignment: .leading, spacing: 1) {
-          Text("Mac Cleaner").font(.headline)
+          Text("Lightly").font(.headline)
           Text("Version \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "dev")")
             .font(.caption)
             .foregroundStyle(.secondary)

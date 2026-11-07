@@ -1,4 +1,4 @@
-# Mac Cleaner: design
+# Lightly: design
 
 Date: 2026-11-06
 Status: approved by the owner 2026-11-06; reviewer findings folded in afterwards as **(call)** items
@@ -119,7 +119,7 @@ Decided by the owner:
 - Not sandboxed, because the sandbox blocks cleaning other apps' files. Hardened runtime on, so Developer ID signing and notarization can be added later without rework.
 - One app process. It schedules its own runs; no separate background daemon.
 - State is stored as JSON under `~/Library/Application Support/<bundle id>/`: run history (12 months), app inventory, daily disk samples (30 days). Memory, CPU and battery history lives in memory only.
-- Working name "Mac Cleaner". The name must not imitate "CleanMyMac" when published.
+- Working name "Lightly". The name must not imitate "CleanMyMac" when published.
 - The cleaning rules and the deletion gateway get unit tests against temporary folders. No test ever points at a real user folder.
 
 ## Constraints

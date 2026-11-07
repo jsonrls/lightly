@@ -1,4 +1,4 @@
-# Mac Cleaner
+# Lightly
 
 A native macOS menu bar app that cleans junk by itself and shows disk, memory, CPU and battery at a glance.
 
@@ -36,10 +36,10 @@ swift test
 scripts/bundle.sh
 ```
 
-`scripts/bundle.sh` builds `dist/Mac Cleaner.app` as a **dry run**, which deletes nothing. To see what a clean would remove:
+`scripts/bundle.sh` builds `dist/Lightly.app` as a **dry run**, which deletes nothing. To see what a clean would remove:
 
 ```bash
-"dist/Mac Cleaner.app/Contents/MacOS/MacCleaner" --dry-run-report
+"dist/Lightly.app/Contents/MacOS/MacCleaner" --dry-run-report
 ```
 
 The list is written to `~/Library/Application Support/com.maccleaner.app/dry-run.txt`.

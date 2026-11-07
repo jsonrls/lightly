@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCEBFF"/>
+    </linearGradient>
+    <linearGradient id="bin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5B8DF8"/>
+      <stop offset="1" stop-color="#3D55DE"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#34C9B8"/>
+      <stop offset="1" stop-color="#8CF0B0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <path d="M340 530 H684 L654 796 Q649 834 612 834 H412 Q375 834 370 796 Z" fill="url(#bin)"/>
+  <rect x="312" y="472" width="400" height="44" rx="22" fill="url(#bin)"/>
+  <g fill="#FFFFFF" opacity="0.5">
+    <rect x="446" y="586" width="22" height="192" rx="11"/>
+    <rect x="501" y="586" width="22" height="192" rx="11"/>
+    <rect x="556" y="586" width="22" height="192" rx="11"/>
+  </g>
+  <path d="M498 452 C472 340 520 214 700 170 C734 300 660 410 528 438 Z" fill="url(#feather)"/>
+  <path d="M498 452 C540 370 600 280 676 200" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+</svg>

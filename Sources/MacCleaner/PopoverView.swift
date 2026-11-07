@@ -28,7 +28,7 @@ struct PopoverView: View {
   private var header: some View {
     HStack(spacing: 8) {
       Image(systemName: "sparkles").foregroundStyle(.tint)
-      Text("Mac Cleaner").font(.headline)
+      Text("Lightly").font(.headline)
       Spacer()
       settingsButton
       Button { NSApplication.shared.terminate(nil) } label: {
@@ -37,8 +37,8 @@ struct PopoverView: View {
       .buttonStyle(.plain)
       .glassEffect(.regular.interactive(), in: .circle)
       .disabled(model.isCleaning)  // quitting mid-clean would repeat the run at next launch
-      .help("Quit Mac Cleaner")
-      .accessibilityLabel("Quit Mac Cleaner")
+      .help("Quit Lightly")
+      .accessibilityLabel("Quit Lightly")
     }
   }
 

@@ -7,7 +7,7 @@ struct MacCleanerApp: App {
 
   init() {
     if Launch.isDryRunReport { runDryRunReport() }
-    NSLog("Mac Cleaner mode: %@", "\(Launch.mode)")
+    NSLog("Lightly mode: %@", "\(Launch.mode)")
     let model = AppModel(mode: Launch.mode)
     model.start()  // here, not onAppear: window content is only built on the first click
     _model = State(initialValue: model)
@@ -22,18 +22,18 @@ struct MacCleanerApp: App {
         Image(systemName: "sparkles")
         Text(text)
       }
-      .accessibilityLabel("Mac Cleaner, \(text)")
+      .accessibilityLabel("Lightly, \(text)")
     }
     .menuBarExtraStyle(.window)
 
-    Window("Mac Cleaner", id: "full") {
+    Window("Lightly", id: "full") {
       FullView(model: model)
         .windowFullScreenBehavior(.disabled)
     }
     .defaultSize(width: 760, height: 480)
     .windowResizability(.contentSize)
 
-    Window("Mac Cleaner Settings", id: "settings") {
+    Window("Lightly Settings", id: "settings") {
       SettingsView(model: model)
         .windowFullScreenBehavior(.disabled)
     }

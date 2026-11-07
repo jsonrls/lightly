@@ -53,7 +53,7 @@ import SwiftUI
         You answer questions about this Mac in up to three short sentences for a non-technical person.
         Use only the facts given, with figures exactly as written. If the facts do not answer the question, say so.
         When asked what items are, name the largest three and say in a few plain words what each one probably is.
-        Never advise deleting, removing or uninstalling anything: Mac Cleaner cleans caches by itself.
+        Never advise deleting, removing or uninstalling anything: Lightly cleans caches by itself.
         """)
     do {
       let answer = try await session.respond(to: "Facts:\n\(facts)\n\nQuestion: \(question)").content
