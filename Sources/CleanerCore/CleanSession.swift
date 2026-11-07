@@ -11,8 +11,15 @@ public struct CleanEnvironment: Sendable {
   public var trashDateAdded: @Sendable (URL) -> Date?
   public var mode: DeletionGateway.Mode
 
+  /// The account's home from the user database. URL.homeDirectory honors launch-environment
+  /// overrides, and every allowed and denied root is built from this.
+  public static let userHome: URL = {
+    guard let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir else { return URL(filePath: "/dev/null/no-home") }
+    return URL(filePath: String(cString: dir), directoryHint: .isDirectory)
+  }()
+
   public static func live(mode: DeletionGateway.Mode) -> CleanEnvironment {
-    let home = URL.homeDirectory
+    let home = userHome
     let hooks = DeletionGateway.Hooks.live
     let running: @Sendable () -> Set<String> = {
       Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))

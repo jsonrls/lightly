@@ -37,6 +37,16 @@ struct RunPolicyTests {
 
   // MARK: first-launch stamp
 
+  // dry-run.txt sits where any process can read it; Trash names are readable only with Full Disk Access.
+  @Test func dryRunListCountsTrashEntriesWithoutNames() {
+    let trash = URL(filePath: "/Users/u/.Trash", directoryHint: .isDirectory)
+    let touched = [URL(filePath: "/Users/u/Library/Caches/a"), trash.appending(path: "secret-name.pdf"), trash.appending(path: "b")]
+    let text = RunPolicy.dryRunList(touched, trashDir: trash, warning: nil)
+    #expect(text.contains("/Users/u/Library/Caches/a\n"))
+    #expect(text.contains("/Users/u/.Trash: 2 items"))
+    #expect(!text.contains("secret-name"))
+  }
+
   @Test func firstLaunchStampsNow() {
     var s = AppState()
     #expect(RunPolicy.stampFirstLaunch(&s, now: at(12)))

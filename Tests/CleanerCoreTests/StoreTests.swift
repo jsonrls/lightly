@@ -70,6 +70,18 @@ struct StoreTests {
     #expect(text.contains("\"2023-11-14T22:13:20Z\""))
   }
 
+  // A state folder swapped for a link must not let the app write or rename files wherever the link points.
+  @Test func linkedDirectoryIsNeverWritten() throws {
+    box.dir("protected")
+    try Data("victim".utf8).write(to: box.url("protected/state.json"))
+    try Data("older".utf8).write(to: box.url("protected/state.corrupt.json"))
+    box.link("state-dir", to: box.url("protected"))
+    #expect(store.load().paused)
+    #expect(throws: (any Error).self) { try store.save(AppState()) }
+    #expect(try String(contentsOf: box.url("protected/state.json"), encoding: .utf8) == "victim")
+    #expect(try String(contentsOf: box.url("protected/state.corrupt.json"), encoding: .utf8) == "older")
+  }
+
   @Test func saveFailureThrows() {
     box.file("blocker")  // a file where the directory should be
     #expect(throws: (any Error).self) { try Store(directory: box.url("blocker")).save(AppState()) }
@@ -85,6 +97,13 @@ struct StoreTests {
     s.prune(now: now)
     #expect(s.history.map(\.date) == [now - 364 * Limits.day])
     #expect(s.diskSamples.map(\.freeBytes) == [2])
+  }
+
+  // From the account record, not the launch environment: CFFIXED_USER_HOME or HOME could re-root every path.
+  @Test func homeComesFromTheAccount() {
+    let home = String(cString: getpwuid(getuid())!.pointee.pw_dir)
+    #expect(CleanEnvironment.userHome.path(percentEncoded: false) == home + "/")
+    #expect(Store.defaultDirectory().path(percentEncoded: false) == home + "/Library/Application Support/com.maccleaner.app/")
   }
 
   @Test func defaultDirectoryPath() {

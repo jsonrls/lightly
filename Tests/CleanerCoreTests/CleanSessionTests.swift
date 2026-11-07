@@ -380,7 +380,7 @@ struct CleanSessionTests {
 
   @Test(.enabled(if: hasDockerBinary)) func dockerPrunesInLiveMode() { #expect(dockerCalls() == Self.prunes) }
 
-  @Test(.enabled(if: hasDockerBinary)) func dockerFollowsDryRun() { #expect(dockerCalls(mode: .dryRun) == [["info"]]) }
+  @Test(.enabled(if: hasDockerBinary)) func dockerFollowsDryRun() { #expect(dockerCalls(mode: .dryRun).isEmpty) }
 
   @Test(.enabled(if: hasDockerBinary)) func dockerDataFolderOnBootVolumePrunes() throws {
     try dockerSettings(dataFolder: s.dir("docker-data"))

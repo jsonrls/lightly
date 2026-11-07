@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public protocol CommandRunner: Sendable {
   /// nil on launch failure or timeout.
@@ -61,6 +62,7 @@ public struct DockerRule: CleanRule {
   private let mode: DeletionGateway.Mode
   private let isOnBootVolume: @Sendable (URL) -> Bool
   private let candidates: [URL]
+  private let isTrusted: @Sendable (URL) -> Bool
 
   public static let defaultCandidates: [URL] = [
     "/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app/Contents/Resources/bin/docker",
@@ -68,12 +70,27 @@ public struct DockerRule: CleanRule {
 
   public init(home: URL, runner: any CommandRunner, mode: DeletionGateway.Mode,
               isOnBootVolume: @escaping @Sendable (URL) -> Bool,
-              candidates: [URL] = DockerRule.defaultCandidates) {
+              candidates: [URL] = DockerRule.defaultCandidates,
+              isTrusted: @escaping @Sendable (URL) -> Bool = DockerRule.isDockerSigned) {
     self.home = home
     self.runner = runner
     self.mode = mode
     self.isOnBootVolume = isOnBootVolume
     self.candidates = candidates
+    self.isTrusted = isTrusted
+  }
+
+  /// The candidate folders are writable by the owner, and a child may share the app's Full Disk Access,
+  /// so only Docker Inc's own signed binary is run.
+  // shortcut: a Homebrew-built docker is unsigned and is skipped; check-then-exec leaves a short swap window.
+  public static func isDockerSigned(_ url: URL) -> Bool {
+    var code: SecStaticCode?
+    var requirement: SecRequirement?
+    let docker = "anchor apple generic and certificate leaf[subject.OU] = \"9BNSXJN65R\"" as CFString
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+          SecRequirementCreateWithString(docker, [], &requirement) == errSecSuccess
+    else { return false }
+    return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), requirement) == errSecSuccess
   }
 
   /// Result of reading Docker Desktop's settings: unknown means the rule must not touch Docker.
@@ -97,7 +114,12 @@ public struct DockerRule: CleanRule {
 
   public func run(gateway: DeletionGateway, now: Date) -> CleanResult {
     var result = CleanResult(category: category, bytesFreed: 0, errors: [])
-    guard let docker = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) })
+    // A dry run launches nothing: running third-party code is itself a side effect.
+    if mode == .dryRun { return result }
+    // Resolved first, so the file that was checked is the file that runs.
+    guard let docker = candidates.map({ $0.resolvingSymlinksInPath() })
+      .first(where: { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) }),
+      isTrusted(docker)
     else { return result }
     // Never launches Docker: a stopped daemon makes `info` fail and we stop.
     guard let info = runner.run(docker, ["info"], timeout: 10), info.status == 0 else { return result }
@@ -107,7 +129,6 @@ public struct DockerRule: CleanRule {
     case .internalDefault where !isOnBootVolume(home): return result  // the default data folder sits under home
     default: break
     }
-    if mode == .dryRun { return result }
     for arguments in [["builder", "prune", "-f"], ["image", "prune", "-f"]] {
       guard let out = runner.run(docker, arguments, timeout: 120) else {
         result.errors.append("docker \(arguments[0]) prune: failed to run or timed out")

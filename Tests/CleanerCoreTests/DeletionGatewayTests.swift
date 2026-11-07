@@ -50,18 +50,11 @@ struct DeletionGatewayTests {
 
   private func unlock(_ path: String) { chmod(s.url(path).path(percentEncoded: false), 0o755) }
 
-  private func deviceOf(_ path: String) -> dev_t {
-    var info = stat()
-    lstat(s.url(path).path(percentEncoded: false), &info)
-    return info.st_dev
-  }
-
   @Test func removeTreeDoesNotFollowALinkWrittenWithASlash() {
     s.file("Documents/locked/keep")
     lock("Documents/locked")
     let link = s.link("Caches/link", to: s.url("Documents/locked"))
     let slashed = URL(filePath: link.path(percentEncoded: false) + "/")
-    DeletionGateway.makeFoldersWritable(slashed, device: deviceOf("Documents"))
     try? DeletionGateway.removeTree(slashed)
     #expect(mode("Documents/locked") == 0o555)
     #expect(s.exists("Documents/locked/keep"))
@@ -78,28 +71,29 @@ struct DeletionGatewayTests {
   }
 
   @Test func unsearchableFolderStaysUnsearchable() {
-    s.dir("Caches/tool")
+    s.file("Caches/tool/keep")
     chmod(s.url("Caches/tool").path(percentEncoded: false), 0o400)
-    DeletionGateway.makeFoldersWritable(s.url("Caches/tool"), device: deviceOf("Caches"))
+    #expect(throws: (any Error).self) { try DeletionGateway.removeTree(s.url("Caches/tool")) }
     #expect(mode("Caches/tool") == 0o400)
     unlock("Caches/tool")
   }
 
   @Test func anotherVolumeIsLeftAlone() {
-    s.dir("Caches/tool")
+    s.file("Caches/tool/keep")
     lock("Caches/tool")
-    DeletionGateway.makeFoldersWritable(s.url("Caches/tool"), device: 0)
+    #expect(throws: (any Error).self) { try DeletionGateway.removeTree(s.url("Caches/tool"), device: 0) }
     #expect(mode("Caches/tool") == 0o555)
     unlock("Caches/tool")
   }
 
   @Test func addsOnlyTheOwnerWriteBit() {
-    s.dir("Caches/tool")
+    // The unreadable child stops the delete, so the parent's new mode can be read back.
+    s.dir("Caches/tool/aa")
+    chmod(s.url("Caches/tool/aa").path(percentEncoded: false), 0o000)
     chmod(s.url("Caches/tool").path(percentEncoded: false), 0o500)
-    var info = stat()
-    lstat(s.url("Caches/tool").path(percentEncoded: false), &info)
-    DeletionGateway.makeFoldersWritable(s.url("Caches/tool"), device: info.st_dev)
+    #expect(throws: (any Error).self) { try DeletionGateway.removeTree(s.url("Caches/tool")) }
     #expect(mode("Caches/tool") == 0o700)
+    unlock("Caches/tool/aa")
   }
 
   @Test func readOnlyParentOfTheTargetStaysReadOnly() {
@@ -119,6 +113,21 @@ struct DeletionGatewayTests {
     try DeletionGateway.removeTree(s.url("Caches/tool"))
     #expect(!s.exists("Caches/tool"))
     #expect(mode("Documents/keep") == 0o400)
+  }
+
+  @Test func parentSwappedForALinkAfterValidationIsNotFollowed() {
+    s.file("Protected/V10/x")
+    s.dir("npm/_cacache/V10")
+    var hooks = s.hooks
+    let s = s
+    hooks.remove = { url in
+      try FileManager.default.moveItem(at: s.url("npm/_cacache"), to: s.url("npm/old"))
+      s.link("npm/_cacache", to: s.url("Protected"))
+      try DeletionGateway.removeTree(url)
+    }
+    let g = s.gateway(roots: ["npm/_cacache"], denied: ["Protected"], hooks: hooks)
+    #expect(throws: (any Error).self) { try g.delete(s.url("npm/_cacache/V10")) }
+    #expect(s.exists("Protected/V10/x"))
   }
 
   @Test func dryRunAndRefusalLeaveModesAlone() throws {

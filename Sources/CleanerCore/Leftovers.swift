@@ -14,7 +14,8 @@ public struct AppInventory: Codable, Sendable, Equatable {
   }
 
   public func due(now: Date) -> [String] {
-    removed.filter { !$0.key.hasPrefix("com.apple.") && now.timeIntervalSince($0.value) >= Limits.leftoverGrace }
+    // Lowercased: the boot volume ignores case, so Com.apple.X is Apple's com.apple.x.
+    removed.filter { !$0.key.lowercased().hasPrefix("com.apple.") && now.timeIntervalSince($0.value) >= Limits.leftoverGrace }
       .keys.sorted()
   }
 

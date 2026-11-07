@@ -29,9 +29,11 @@ struct DockerTests {
   }
 
   func rule(_ runner: FakeRunner, mode: DeletionGateway.Mode = .live, candidates: [URL]? = nil,
-            onBoot: Bool = true) -> DockerRule {
-    DockerRule(home: box.root, runner: runner, mode: mode, isOnBootVolume: { _ in onBoot },
-               candidates: candidates ?? [binary])
+            onBoot: Bool = true, trusted: Bool = true) -> DockerRule {
+    var trust: @Sendable (URL) -> Bool = { _ in true }
+    if !trusted { trust = { DockerRule.isDockerSigned($0) } }
+    return DockerRule(home: box.root, runner: runner, mode: mode, isOnBootVolume: { _ in onBoot },
+                      candidates: candidates ?? [binary], isTrusted: trust)
   }
   func gateway() -> DeletionGateway { box.gateway(roots: ["."]) }
   func settings(_ json: String, file: String = "settings-store.json") throws {
@@ -126,10 +128,16 @@ struct DockerTests {
     #expect(!result.errors.isEmpty)
   }
 
-  @Test func dryRunStopsAfterInfo() {
+  @Test func dryRunLaunchesNothing() {
     let runner = FakeRunner()
     _ = rule(runner, mode: .dryRun).run(gateway: gateway(), now: .now)
-    #expect(runner.calls == [["info"]])
+    #expect(runner.calls.isEmpty)
+  }
+
+  @Test func binaryNotSignedByDockerRunsNothing() {
+    let runner = FakeRunner()
+    _ = rule(runner, trusted: false).run(gateway: gateway(), now: .now)
+    #expect(runner.calls.isEmpty)
   }
 
   @Test func parsesReclaimed() {
