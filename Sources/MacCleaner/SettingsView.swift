@@ -170,7 +170,7 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
         }
         Spacer()
-        if let url = URL(string: "https://github.com/jsonrls/mac-cleaner") {
+        if let url = URL(string: "https://github.com/jsonrls/lightly") {
           Link("View on GitHub", destination: url)
         }
       }
