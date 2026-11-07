@@ -5,24 +5,25 @@ import SwiftUI
 
 struct SettingsView: View {
   let model: AppModel
+  @State private var keptHeight: CGFloat = 0
 
   var body: some View {
-    ScrollView {
-      GlassEffectContainer(spacing: 4) {
-        VStack(alignment: .leading, spacing: 16) {
-          StatusLines(model: model)
-          general
-          schedule
-          whatToClean
-          alwaysKept
-          permissions
-          about
-        }
-        .padding(20)
+    GlassEffectContainer(spacing: 4) {
+      VStack(alignment: .leading, spacing: 10) {
+        StatusLines(model: model)
+        general
+        schedule
+        whatToClean
+        alwaysKept
+        permissions
+        about
       }
+      .padding(14)
     }
-    .frame(width: 440)
-    .frame(minHeight: 420, idealHeight: 680)
+    .font(.callout)
+    .controlSize(.small)
+    .frame(width: 400)
+    .fixedSize(horizontal: false, vertical: true)  // the window is as tall as its content, so nothing scrolls
     .containerBackground(.thinMaterial, for: .window)
   }
 
@@ -96,17 +97,26 @@ struct SettingsView: View {
 
   private var alwaysKept: some View {
     section("Always kept") {
-      ForEach(model.state.settings.keptFolders, id: \.self) { path in
-        HStack {
-          Text(shortPath(path)).lineLimit(1).truncationMode(.middle)
-          Spacer()
-          Button { model.updateSettings { $0.keptFolders.removeAll { $0 == path } } } label: {
-            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+      if !model.state.settings.keptFolders.isEmpty {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 5) {
+            ForEach(model.state.settings.keptFolders, id: \.self) { path in
+              HStack {
+                Text(shortPath(path)).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button { model.updateSettings { $0.keptFolders.removeAll { $0 == path } } } label: {
+                  Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop keeping \(shortPath(path))")
+              }
+              Divider()
+            }
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Stop keeping \(shortPath(path))")
+          .fixedSize(horizontal: false, vertical: true)
+          .onGeometryChange(for: CGFloat.self, of: \.size.height) { keptHeight = $0 }
         }
-        Divider()
+        .frame(height: min(keptHeight, 70))  // a long list scrolls here, so the window stays on screen
       }
       Text("Never cleaned, along with Documents, Desktop, Downloads, Photos, Mail and browser profiles.")
         .font(.caption)
@@ -160,17 +170,17 @@ struct SettingsView: View {
   private var about: some View {
     card {
       HStack(spacing: 10) {
-        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 44, height: 44)
+        Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 26, height: 26)
         VStack(alignment: .leading, spacing: 1) {
-          Text("Lightly").font(.headline)
+          Text("Lightly").font(.callout.weight(.semibold))
           Text("Version \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "dev")")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-      }
-      Divider()
-      if let url = URL(string: "https://github.com/jsonrls/mac-cleaner") {
-        Link("View on GitHub", destination: url)
+        Spacer()
+        if let url = URL(string: "https://github.com/jsonrls/mac-cleaner") {
+          Link("View on GitHub", destination: url)
+        }
       }
     }
   }
@@ -188,21 +198,21 @@ struct SettingsView: View {
         if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
       }
       Spacer()
-      Toggle(title, isOn: isOn).toggleStyle(.switch).labelsHidden()
+      Toggle(title, isOn: isOn).toggleStyle(.switch).labelsHidden().controlSize(.mini)
     }
   }
 
   private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text(title).font(.callout.weight(.semibold))
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title).font(.caption.weight(.semibold))
       card(content)
     }
   }
 
   private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 8, content: content)
-      .padding(12)
+    VStack(alignment: .leading, spacing: 5, content: content)
+      .padding(10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .glassEffect(.regular, in: .rect(cornerRadius: 14))
+      .glassEffect(.regular, in: .rect(cornerRadius: 12))
   }
 }
