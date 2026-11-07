@@ -125,6 +125,12 @@ The first automatic clean waits one full interval after the first launch, an hou
 
 The design and plan are in `docs/superpowers/`. Logo files are in `design/logo/`. Dusty's loading animation is based on the Loading State component from [beautifului.dev](https://www.beautifului.dev/) (MIT).
 
+## Support
+
+If Lightly saves you some space, you can buy me a coffee.
+
+<a href="https://www.buymeacoffee.com/jsonrls" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="217" height="60"></a>
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
